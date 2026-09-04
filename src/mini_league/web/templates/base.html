@@ -33,14 +33,17 @@
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--paper); color: var(--ink);
-    font: 17px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif;
+    /* Helvetica on a Mac, its metric twin Arial elsewhere. No web font: the
+       app has to work on a phone with no signal beyond the server. */
+    font: 17px/1.4 "Helvetica Neue", Helvetica, Arial, sans-serif;
   }
   main { max-width: 46rem; margin: 0 auto; padding: 4px 16px 72px; }
 
   /* Condensed for anything that behaves like a scoreboard. */
   .cond, h1, table.board td.num, .tally, .masthead b {
-    font-family: "Arial Narrow", "Helvetica Neue Condensed", "Liberation Sans Narrow",
-                 -apple-system, sans-serif;
+    font-family: "Helvetica Neue Condensed", "HelveticaNeue-CondensedBold",
+                 "Arial Narrow", "Liberation Sans Narrow", "Helvetica Neue",
+                 Helvetica, Arial, sans-serif;
   }
   h1 { font-size: 2rem; letter-spacing: -.01em; margin: 14px 0 2px; font-weight: 700; }
   h2 { font-size: .95rem; margin: 26px 0 8px; font-weight: 700;
