@@ -10,3 +10,7 @@ build/
 .env
 .env.*
 !.env.example
+
+# Editor and tool leftovers
+.Rhistory
+.DS_Store
