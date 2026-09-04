@@ -1,7 +1,7 @@
 # Fly.io deployment. See DEPLOY.md for the steps, including the two secrets
 # that must be set before the organizer screens will open.
-app = "mini-league"
-primary_region = "lhr"
+app = "memphis-mini-league"
+primary_region = "ord"
 
 [build]
   dockerfile = "Dockerfile"
