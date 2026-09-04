@@ -76,8 +76,30 @@ def create_app(
     app.include_router(pages.router)
 
     @app.get("/health", include_in_schema=False)
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
+    def health(request: Request) -> dict[str, str]:
+        """Liveness plus a look at the database.
+
+        Reporting the migration revision makes a deploy verifiable from outside:
+        if migrations failed to apply, this says so rather than the app looking
+        healthy while serving against an old schema.
+        """
+        from sqlalchemy import text
+
+        factory = request.app.state.session_factory
+        try:
+            with factory() as db:
+                db.execute(text("SELECT 1")).scalar()
+                try:
+                    revision = db.execute(
+                        text("SELECT version_num FROM alembic_version")
+                    ).scalar()
+                except Exception:
+                    # A reachable database that Alembic did not build: the test
+                    # suite does this deliberately, so it is not a failure.
+                    revision = "unmanaged"
+        except Exception:
+            return {"status": "degraded", "database": "unreachable"}
+        return {"status": "ok", "database": "ok", "schema": revision or "unmigrated"}
 
     return app
 

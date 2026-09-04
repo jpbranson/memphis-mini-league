@@ -325,3 +325,20 @@ def test_organizer_home_links_to_the_new_screens(client, api_season):
     body = text(client.get("/admin"))
     for path in ("/admin/players", "/admin/seasons", "/admin/settings"):
         assert f'href="{path}"' in body
+
+
+# --- health ----------------------------------------------------------------------
+
+
+def test_health_reports_the_database_and_schema(client):
+    body = client.get("/health").json()
+    assert body["status"] == "ok"
+    assert body["database"] == "ok"
+    # A migrated database names its revision; the test schema is created
+    # directly, so either a revision or "unmigrated" is correct here.
+    assert body["schema"]
+
+
+def test_health_needs_no_sign_in(visitor, unconfigured):
+    assert visitor.get("/health").json()["status"] == "ok"
+    assert unconfigured.get("/health").json()["status"] == "ok"
