@@ -23,13 +23,14 @@ from trueskill import Rating
 
 from .. import games as games_service
 from .. import leaderboard as leaderboard_service
+from .. import merges as merges_service
 from .. import players as players_service
 from .. import seasons as seasons_service
 from .. import sessions as sessions_service
 from .. import teams as teams_service
 from ..models import LeagueSession, Player
 from ..ratings import display_rating
-from ..settings import TeamGenConfig
+from ..settings import DEFAULT_RATING_CONFIG, TeamGenConfig
 from .deps import get_db, templates
 
 router = APIRouter()
@@ -325,6 +326,7 @@ def player_page(
                 else []
             ),
             "all_time": leaderboard_service.all_time_record(db, player_id),
+            "config": DEFAULT_RATING_CONFIG,
         },
     )
 
@@ -712,3 +714,189 @@ async def apply_game_edit(request: Request, game_id: int, db: Session = Depends(
         return rerender(str(exc))
 
     return RedirectResponse(f"/admin/session/{game.session_id}", status_code=303)
+
+
+# --- player management (milestone 4) ---------------------------------------------
+
+
+def players_context(
+    db: Session,
+    *,
+    query: str = "",
+    error: str | None = None,
+    notice: str | None = None,
+) -> dict:
+    season = seasons_service.current_season(db)
+    matches = (
+        [m.player for m in players_service.search_players(db, query)]
+        if query.strip()
+        else players_service.list_players(db, include_inactive=True)
+    )
+    return {
+        "players": matches,
+        "query": query.strip(),
+        "rating_of": rating_lookup(db, season.id) if season else (lambda _: None),
+        "has_season": season is not None,
+        "error": error,
+        "notice": notice,
+    }
+
+
+def render_players(
+    request: Request,
+    db: Session,
+    *,
+    query: str = "",
+    error: str | None = None,
+    notice: str | None = None,
+    status_code: int = 200,
+    partial: bool = True,
+) -> HTMLResponse:
+    ctx = players_context(db, query=query, error=error, notice=notice)
+    template = "partials/players_list.html" if partial else "admin_players.html"
+    return templates.TemplateResponse(request, template, ctx, status_code=status_code)
+
+
+@router.get("/admin/players", response_class=HTMLResponse)
+def players_page(request: Request, q: str = "", db: Session = Depends(get_db)):
+    return render_players(request, db, query=q, partial=False)
+
+
+@router.get("/admin/players/search", response_class=HTMLResponse)
+def players_search(request: Request, q: str = "", db: Session = Depends(get_db)):
+    return render_players(request, db, query=q)
+
+
+@router.post("/admin/players/{player_id}/rename", response_class=HTMLResponse)
+def rename_player(
+    request: Request,
+    player_id: int,
+    name: str = Form(...),
+    q: str = Form(default=""),
+    db: Session = Depends(get_db),
+):
+    try:
+        player = merges_service.rename_player(db, player_id, name)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        return render_players(request, db, query=q, error=str(exc), status_code=400)
+    return render_players(request, db, query=q, notice=f"Renamed to {player.name}.")
+
+
+@router.post("/admin/players/{player_id}/active", response_class=HTMLResponse)
+def set_player_active(
+    request: Request,
+    player_id: int,
+    active: bool = Form(...),
+    q: str = Form(default=""),
+    db: Session = Depends(get_db),
+):
+    try:
+        player = merges_service.set_player_active(db, player_id, active)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        return render_players(request, db, query=q, error=str(exc), status_code=400)
+    state = "reactivated" if player.active else "deactivated"
+    return render_players(request, db, query=q, notice=f"{player.name} {state}.")
+
+
+@router.get("/admin/players/{player_id}/merge", response_class=HTMLResponse)
+def merge_form(
+    request: Request,
+    player_id: int,
+    target_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    """Choose who to keep, then confirm once the consequences are on screen."""
+    try:
+        source = players_service.get_player(db, player_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    target = db.get(Player, target_id) if target_id else None
+    plan = merges_service.plan_merge(db, source.id, target.id) if target else None
+    return templates.TemplateResponse(
+        request,
+        "admin_merge.html",
+        {
+            "source": source,
+            "target": target,
+            "plan": plan,
+            "candidates": merges_service.merge_candidates(db, source.id),
+        },
+    )
+
+
+@router.post("/admin/players/{player_id}/merge")
+def apply_merge(
+    request: Request,
+    player_id: int,
+    target_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    try:
+        merges_service.merge_players(db, player_id, target_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        source = db.get(Player, player_id)
+        target = db.get(Player, target_id)
+        return templates.TemplateResponse(
+            request,
+            "admin_merge.html",
+            {
+                "source": source,
+                "target": target,
+                "plan": (
+                    merges_service.plan_merge(db, player_id, target_id) if target else None
+                ),
+                "candidates": merges_service.merge_candidates(db, player_id),
+                "error": str(exc),
+            },
+            status_code=400,
+        )
+    return RedirectResponse("/admin/audit", status_code=303)
+
+
+def audit_context(db: Session, *, error: str | None = None, notice: str | None = None) -> dict:
+    entries = merges_service.audit_entries(db)
+    return {
+        "entries": [
+            {
+                "entry": entry,
+                "undone": (
+                    merges_service.is_merge_undone(db, entry.id)
+                    if entry.action == merges_service.MERGE_ACTION
+                    else False
+                ),
+                "reversible": entry.action == merges_service.MERGE_ACTION,
+            }
+            for entry in entries
+        ],
+        "error": error,
+        "notice": notice,
+    }
+
+
+@router.get("/admin/audit", response_class=HTMLResponse)
+def audit_page(request: Request, db: Session = Depends(get_db)):
+    return templates.TemplateResponse(request, "admin_audit.html", audit_context(db))
+
+
+@router.post("/admin/audit/{audit_id}/undo", response_class=HTMLResponse)
+def undo_audit(request: Request, audit_id: int, db: Session = Depends(get_db)):
+    try:
+        merges_service.undo_merge(db, audit_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            request, "admin_audit.html", audit_context(db, error=str(exc)), status_code=400
+        )
+    return templates.TemplateResponse(
+        request,
+        "admin_audit.html",
+        audit_context(db, notice="Merge undone. Ratings replayed."),
+    )

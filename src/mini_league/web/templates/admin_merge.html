@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Merge {{ source.name }} — Mini League{% endblock %}
+{% block body %}
+<h1>Merge {{ source.name }}</h1>
+<p class="sub">
+  Fold this record into another player. Every game and check-in moves across,
+  ratings are replayed, and the merge can be undone from the audit log.
+</p>
+
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+{% if not target %}
+  <div class="card">
+    <h2>Keep which player?</h2>
+    {% if candidates %}
+      <p class="muted small" style="margin-top:0">
+        Closest names first. {{ source.name }} will be retired and their history
+        will move to whoever you pick.
+      </p>
+      <ul class="plain">
+        {% for candidate in candidates %}
+          <li>
+            <span>{{ candidate.name }}
+              {% if not candidate.active %}<span class="muted small">retired</span>{% endif %}
+            </span>
+            <a class="btn small"
+               href="/admin/players/{{ source.id }}/merge?target_id={{ candidate.id }}">Choose</a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted small">There is nobody else to merge into.</p>
+    {% endif %}
+    <a class="btn" style="margin-top:12px" href="/admin/players">Cancel</a>
+  </div>
+
+{% else %}
+  <div class="card">
+    <h2>Merge {{ source.name }} into {{ target.name }}?</h2>
+
+    {% if plan and not plan.is_safe %}
+      <div class="flash error">
+        These two played against each other in game(s)
+        {{ plan.conflicts | join(", ") }}, so they cannot be the same person.
+        Check those games before merging.
+      </div>
+      <a class="btn" href="/admin/players/{{ source.id }}/merge">Pick someone else</a>
+      <a class="btn" href="/admin/players">Cancel</a>
+    {% else %}
+      <ul class="plain">
+        <li><span>Games moving across</span>
+          <span class="rating">{{ plan.moved_game_teams | length }}</span></li>
+        {% if plan.removed_game_teams %}
+          <li><span>Games where both are on one team, collapsing to one player</span>
+            <span class="rating">{{ plan.removed_game_teams | length }}</span></li>
+        {% endif %}
+        <li><span>Session check-ins moving across</span>
+          <span class="rating">{{ plan.moved_sessions | length }}</span></li>
+        {% if plan.removed_sessions %}
+          <li><span>Sessions where both were checked in, combining</span>
+            <span class="rating">{{ plan.removed_sessions | length }}</span></li>
+        {% endif %}
+      </ul>
+      <p class="muted small">
+        {{ source.name }} will be retired and marked as merged.
+        {{ target.name }} keeps the combined record. All ratings are recomputed.
+      </p>
+      <form method="post" action="/admin/players/{{ source.id }}/merge">
+        <input type="hidden" name="target_id" value="{{ target.id }}">
+        <button class="btn primary" type="submit">
+          Merge into {{ target.name }}</button>
+        <a class="btn" href="/admin/players/{{ source.id }}/merge">Pick someone else</a>
+      </form>
+    {% endif %}
+  </div>
+{% endif %}
+{% endblock %}

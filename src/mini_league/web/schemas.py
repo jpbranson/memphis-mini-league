@@ -135,6 +135,22 @@ class PlayerDetailOut(ORMModel):
     all_time: dict[str, int]
 
 
+class PlayerUpdate(BaseModel):
+    name: str | None = None
+    active: bool | None = None
+
+
+class MergeRequest(BaseModel):
+    target_player_id: int
+
+
+class AuditEntryOut(ORMModel):
+    id: int
+    action: str
+    payload: dict
+    created_at: dt.datetime
+
+
 class RatingPointOut(ORMModel):
     game_id: int
     mu_before: float

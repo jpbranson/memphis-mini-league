@@ -229,3 +229,49 @@ def test_full_page_links_stay_in_the_same_tab(client, page_session, make_api_pla
     page = squash(text(client.get("/?min_games=0")))
     assert f'<a href="/players/{ada}" >' in page or f'<a href="/players/{ada}">' in page
     assert "target=\"_blank\"" not in page
+
+
+# --- rating explanation on the player page ---------------------------------------
+
+
+def test_player_page_explains_rating_and_skill(client, page_session, make_api_players):
+    ada, ben = make_api_players("Ada", "Ben")
+    check_in_all(client, page_session, [ada, ben])
+    play_round(client, page_session, [ada], [ben])
+
+    body = squash(text(client.get(f"/players/{ada}")))
+    assert "What these numbers mean" in body
+    # Each term is defined in plain words.
+    assert "<strong>Skill</strong> is the league" in body
+    assert "<strong>Uncertainty</strong> is how sure" in body
+    assert "<strong>Rating</strong> is the single number" in body
+    # The parameters are named, not left as magic numbers.
+    assert "Everyone starts at 25" in body
+    assert "starts at 8.33" in body
+    assert "minus 3 times the uncertainty" in body
+    assert "scaled up by 40" in body
+    # And why the subtraction exists at all.
+    assert "from topping the table" in body
+    assert "Only wins and losses count" in body
+
+
+def test_rating_explanation_works_through_the_players_own_numbers(
+    client, page_session, make_api_players
+):
+    """The worked example must use this player's real figures and come out right."""
+    ada, ben = make_api_players("Ada", "Ben")
+    check_in_all(client, page_session, [ada, ben])
+    play_round(client, page_session, [ada], [ben])
+
+    detail = client.get(f"/api/players/{ada}").json()["seasons"][0]
+    mu, sigma, rating = detail["mu"], detail["sigma"], detail["rating"]
+
+    body = squash(text(client.get(f"/players/{ada}")))
+    assert f"For Ada that is ({mu:.2f} &minus; 3 &times; {sigma:.2f}) &times; 40 = " in body
+    assert f"<strong>{rating}</strong>." in body
+    assert round((mu - 3 * sigma) * 40) == rating
+
+
+def test_no_explanation_for_a_player_without_games(client, api_season, make_api_players):
+    (ada,) = make_api_players("Ada")
+    assert "What these numbers mean" not in text(client.get(f"/players/{ada}"))

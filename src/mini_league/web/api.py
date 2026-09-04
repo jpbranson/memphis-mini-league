@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from .. import games as games_service
 from .. import leaderboard as leaderboard_service
+from .. import merges as merges_service
 from .. import players as players_service
 from .. import seasons as seasons_service
 from .. import sessions as sessions_service
@@ -21,15 +22,18 @@ from ..models import Game, LeagueSession, Player
 from ..ratings import display_rating
 from .deps import get_db
 from .schemas import (
+    AuditEntryOut,
     CheckInRequest,
     GameCreate,
     GameOut,
     GameUpdate,
     LeaderboardRowOut,
+    MergeRequest,
     PlayerCreate,
     PlayerDetailOut,
     PlayerMatchOut,
     PlayerOut,
+    PlayerUpdate,
     RatingPointOut,
     SeasonCreate,
     SeasonOut,
@@ -221,6 +225,56 @@ def create_player(payload: PlayerCreate, db: Session = Depends(get_db)):
         ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.patch("/players/{player_id}", response_model=PlayerOut)
+def update_player(player_id: int, payload: PlayerUpdate, db: Session = Depends(get_db)):
+    """Rename and/or activate a player (design doc section 6.1)."""
+    if payload.name is None and payload.active is None:
+        raise HTTPException(status_code=400, detail="nothing to update")
+    try:
+        if payload.name is not None:
+            merges_service.rename_player(db, player_id, payload.name)
+        if payload.active is not None:
+            merges_service.set_player_active(db, player_id, payload.active)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return db.get(Player, player_id)
+
+
+@router.post("/players/{player_id}/merge-into", response_model=AuditEntryOut)
+def merge_into(player_id: int, payload: MergeRequest, db: Session = Depends(get_db)):
+    """Fold this player into another. Recomputes ratings and logs the undo."""
+    try:
+        entry = merges_service.merge_players(db, player_id, payload.target_player_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except merges_service.MergeConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return AuditEntryOut.model_validate(entry, from_attributes=True)
+
+
+@router.get("/admin/audit", response_model=list[AuditEntryOut])
+def list_audit(db: Session = Depends(get_db)):
+    return [
+        AuditEntryOut.model_validate(entry, from_attributes=True)
+        for entry in merges_service.audit_entries(db)
+    ]
+
+
+@router.post("/admin/audit/{audit_id}/undo", response_model=AuditEntryOut)
+def undo_audit_entry(audit_id: int, db: Session = Depends(get_db)):
+    try:
+        entry = merges_service.undo_merge(db, audit_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return AuditEntryOut.model_validate(entry, from_attributes=True)
 
 
 # --- sessions ------------------------------------------------------------------

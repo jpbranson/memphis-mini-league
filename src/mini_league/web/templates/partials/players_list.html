@@ -1,0 +1,53 @@
+{# The player list. Every action re-renders this whole block. #}
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+{% if notice %}<div class="flash ok">{{ notice }}</div>{% endif %}
+
+{% if not players %}
+  <div class="card">
+    <p class="muted small" style="margin:0">
+      {% if query %}No player matches "{{ query }}".{% else %}No players yet.{% endif %}
+    </p>
+  </div>
+{% endif %}
+
+{% for player in players %}
+  <div class="card">
+    <div class="row between">
+      <span>
+        <a href="/players/{{ player.id }}"><strong>{{ player.name }}</strong></a>
+        {% if has_season %}
+          <span class="rating">
+            {%- set info = rating_of(player.id) -%}
+            {%- if info and info.is_new %}new{% elif info %}{{ info.rating }}{% endif -%}
+          </span>
+        {% endif %}
+        {% if player.merged_into %}
+          <span class="muted small">merged away</span>
+        {% elif not player.active %}
+          <span class="muted small">retired</span>
+        {% endif %}
+      </span>
+      <span class="row" style="gap:6px">
+        {% if not player.merged_into %}
+          <form hx-post="/admin/players/{{ player.id }}/active" hx-target="#players-list">
+            <input type="hidden" name="active" value="{{ 'false' if player.active else 'true' }}">
+            <input type="hidden" name="q" value="{{ query }}">
+            <button class="btn small" type="submit">
+              {{ "Retire" if player.active else "Reinstate" }}</button>
+          </form>
+          <a class="btn small" href="/admin/players/{{ player.id }}/merge">Merge</a>
+        {% endif %}
+      </span>
+    </div>
+
+    {% if not player.merged_into %}
+      <form hx-post="/admin/players/{{ player.id }}/rename" hx-target="#players-list"
+            class="row" style="margin-top:10px; gap:6px">
+        <input class="grow" type="text" name="name" value="{{ player.name }}"
+               aria-label="New name for {{ player.name }}">
+        <input type="hidden" name="q" value="{{ query }}">
+        <button class="btn small" type="submit">Rename</button>
+      </form>
+    {% endif %}
+  </div>
+{% endfor %}

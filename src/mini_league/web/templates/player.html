@@ -55,6 +55,37 @@
 {% endif %}
 
 <div class="card">
+  <h2>What these numbers mean</h2>
+  <p class="small" style="margin-top:0">
+    <strong>Skill</strong> is the league's best guess at how good someone is.
+    Everyone starts at {{ "%.0f"|format(config.mu) }}. Win and it goes up, lose
+    and it goes down. Beating someone rated well above you moves it further than
+    beating someone you were expected to beat.
+  </p>
+  <p class="small">
+    <strong>Uncertainty</strong> is how sure the league is of that guess. It
+    starts at {{ "%.2f"|format(config.sigma) }} and shrinks with every game, so a
+    newcomer's skill moves in big jumps while a regular's barely shifts.
+  </p>
+  <p class="small">
+    <strong>Rating</strong> is the single number on the leaderboard. It is the
+    skill estimate minus {{ "%.0f"|format(config.conservative_k) }} times the
+    uncertainty, scaled up by {{ "%.0f"|format(config.display_scale) }}. For
+    {{ player.name }} that is
+    ({{ "%.2f"|format(current.mu) }} &minus; {{ "%.0f"|format(config.conservative_k) }}
+    &times; {{ "%.2f"|format(current.sigma) }})
+    &times; {{ "%.0f"|format(config.display_scale) }} =
+    <strong>{{ current.rating }}</strong>.
+  </p>
+  <p class="small muted" style="margin-bottom:0">
+    Subtracting the uncertainty is deliberate: it keeps someone who won a single
+    game from topping the table before the league knows much about them. Play
+    more games and the rating climbs towards the skill estimate on its own.
+    Only wins and losses count. Scores are recorded but do not affect either number.
+  </p>
+</div>
+
+<div class="card">
   <h2>Games</h2>
   {% if appearances %}
     <ul class="plain">

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Audit log — Mini League{% endblock %}
+{% block body %}
+<div class="row between">
+  <div>
+    <h1>Audit log</h1>
+    <p class="sub">What changed, and how to put it back.</p>
+  </div>
+  <a class="btn small" href="/admin/players">Players</a>
+</div>
+
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+{% if notice %}<div class="flash ok">{{ notice }}</div>{% endif %}
+
+{% if not entries %}
+  <div class="card"><p class="muted small" style="margin:0">Nothing recorded yet.</p></div>
+{% endif %}
+
+{% for row in entries %}
+  {% set entry = row.entry %}
+  {% set payload = entry.payload %}
+  <div class="card">
+    <div class="row between">
+      <strong>
+        {% if entry.action == "merge_players" %}
+          Merged {{ payload.source.name }} into {{ payload.target.name }}
+        {% elif entry.action == "undo_merge" %}
+          Undid a merge
+        {% elif entry.action == "rename_player" %}
+          Renamed {{ payload.before }} to {{ payload.after }}
+        {% elif entry.action == "set_player_active" %}
+          {{ "Reinstated" if payload.after else "Retired" }} a player
+        {% elif entry.action == "edit_game" %}
+          Edited a game
+        {% elif entry.action == "delete_game" %}
+          Deleted a game
+        {% elif entry.action == "restore_game" %}
+          Restored a game
+        {% else %}
+          {{ entry.action }}
+        {% endif %}
+      </strong>
+      <span class="muted small">#{{ entry.id }}</span>
+    </div>
+    <div class="muted small" style="margin-top:3px">
+      {{ entry.created_at.strftime("%Y-%m-%d %H:%M") }} UTC
+      {% if row.undone %}&middot; already undone{% endif %}
+    </div>
+
+    {% if row.reversible and not row.undone %}
+      <form method="post" action="/admin/audit/{{ entry.id }}/undo" style="margin-top:10px">
+        <button class="btn small" type="submit">Undo this merge</button>
+      </form>
+    {% endif %}
+  </div>
+{% endfor %}
+{% endblock %}

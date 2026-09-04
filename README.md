@@ -6,23 +6,25 @@ balanced team generation, and a leaderboard. See
 
 ## Status
 
-Milestones 1, 2 and 3 are done.
+Milestones 1, 2, 3 and 4 are done.
 
 1. **Core**: data model, Alembic migrations, TrueSkill ratings, `recompute_ratings()`.
 2. **Organizer flow**: create a session, check players in with fuzzy search and
    duplicate warnings, record results, edit and delete rounds.
 3. **Leaderboard and player pages**: season standings, per-player rating history
-   with a chart, reachable from a standings drawer on every page.
+   with a chart, reachable from a standings drawer on every page. Each player
+   page explains what rating and skill mean, worked through their own numbers.
+4. **Player management**: rename, retire and reinstate, merge duplicates with a
+   confirmation that shows the consequences, an audit log, and undo.
 
 The session board also shows each player's rating, balances teams on request,
 and previews the matchup as players are moved. Team balancing was brought
 forward from milestone 5; the swap-and-regenerate refinements there are still
 open.
 
-Not built yet: player merge (milestone 4), the rest of team generation
-(milestone 5), the simulator (milestone 6), and the organizer password
-(milestone 7). Every page is currently unauthenticated, so do not put this on a
-public address yet.
+Not built yet: the rest of team generation (milestone 5), the simulator
+(milestone 6), and the organizer password (milestone 7). Every page is currently
+unauthenticated, so do not put this on a public address yet.
 
 ## Run the app
 
@@ -58,7 +60,7 @@ nothing to activate.
 uv run pytest
 ```
 
-253 tests, about 20 seconds. Coverage by file:
+308 tests, about 25 seconds. Coverage by file:
 
 | File | What it checks |
 |---|---|
@@ -74,7 +76,9 @@ uv run pytest
 | `tests/test_teams.py` | Balancing: split enumeration, balance and variety costs, uneven teams |
 | `tests/test_leaderboard.py` | Standings, filters, player history and game lists |
 | `tests/test_board_teams.py` | Ratings on the board, the balance button, the matchup panel |
-| `tests/test_public_pages.py` | Leaderboard, player pages, and the standings drawer |
+| `tests/test_public_pages.py` | Leaderboard, player pages, the rating explanation, and the drawer |
+| `tests/test_merges.py` | Rename, retire, merge planning, merging, and undo |
+| `tests/test_admin_players.py` | Player management pages, the audit log, and its API |
 
 Useful variants:
 
@@ -144,6 +148,7 @@ uv run alembic revision --autogenerate -m "describe the change"
 - `src/mini_league/sessions.py` - session creation, check-in and check-out
 - `src/mini_league/seasons.py` - season lookup and creation
 - `src/mini_league/audit.py` - audit entries carrying full before-state
+- `src/mini_league/merges.py` - rename, retire, merge duplicates, undo
 - `src/mini_league/teams.py` - balanced team generation, a pure function
 - `src/mini_league/leaderboard.py` - read models for standings and player pages
 - `src/mini_league/web/` - FastAPI app, JSON API, Jinja2 templates, vendored htmx and Chart.js

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Players — Mini League{% endblock %}
+{% block body %}
+<div class="row between">
+  <div>
+    <h1>Players</h1>
+    <p class="sub">Rename, retire, or merge duplicates.</p>
+  </div>
+  <a class="btn small" href="/admin/audit">Audit log</a>
+</div>
+
+<div class="card">
+  <label for="q">Find a player</label>
+  <input type="text" id="q" name="q" placeholder="Search by name" autocomplete="off"
+         value="{{ query }}"
+         hx-get="/admin/players/search"
+         hx-trigger="keyup changed delay:200ms, search"
+         hx-target="#players-list">
+</div>
+
+<div id="players-list">
+  {% include "partials/players_list.html" %}
+</div>
+{% endblock %}
