@@ -12,6 +12,8 @@ The season it builds by default:
     the other 7 drift in and out in streaks, and average roughly a third.
   - 15 sessions, one a day, the last of them today.
   - 50 games spread over those sessions, 80% 3v3, 10% 2v2 and 10% 4v4.
+  - 7 WMPs and 8 MMPs, with every morning balanced as a coed one, so the
+    designation half of the balancer is exercised alongside the rest.
 
 Everyone is given a hidden "true skill" the rating system never sees, and
 results are drawn from those skills the way TrueSkill assumes they are. Teams
@@ -37,11 +39,17 @@ from alembic.config import Config
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from mini_league.db import make_engine, make_session_factory  # noqa: E402
+from mini_league.designations import MMP, WMP  # noqa: E402
 from mini_league.games import TeamInput, record_game  # noqa: E402
 from mini_league.leaderboard import current_ratings, leaderboard  # noqa: E402
 from mini_league.models import Player  # noqa: E402
 from mini_league.seasons import create_season, current_season  # noqa: E402
-from mini_league.sessions import check_in, create_session, rounds_played  # noqa: E402
+from mini_league.sessions import (  # noqa: E402
+    check_in,
+    create_session,
+    rounds_played,
+    session_designations,
+)
 from mini_league.settings import DEFAULT_RATING_CONFIG, get_settings  # noqa: E402
 from mini_league.teams import generate_teams, select_bench  # noqa: E402
 
@@ -127,6 +135,21 @@ def plan_attendance(
 
         schedule.append(sorted(attending))
     return schedule
+
+
+def assign_designations(rng: random.Random, count: int, wmp_count: int) -> list[str]:
+    """WMP for `wmp_count` of the roster and MMP for the rest, in a drawn order.
+
+    Which name holds which is drawn rather than fixed, so a roster read down the
+    page does not come out as every WMP first. Nobody is left without one here:
+    a designation is optional in the app, but a season seeded with holes in it
+    would not show the coed balancing doing anything.
+    """
+    if not 0 <= wmp_count <= count:
+        raise SystemExit(f"cannot make {wmp_count} WMPs out of {count} players")
+    held = [WMP] * wmp_count + [MMP] * (count - wmp_count)
+    rng.shuffle(held)
+    return held
 
 
 def game_size_pool(total_games: int) -> list[int]:
@@ -233,16 +256,23 @@ def seed(
     rng: random.Random,
     names: list[str],
     regular_count: int,
+    wmp_count: int,
     days: int,
     total_games: int,
     start: date,
     season_name: str,
+    even_designations: bool = True,
 ) -> tuple[list[dict], list[dict]]:
     season = create_season(db, season_name, start)
 
-    players = [Player(name=name) for name in names]
+    held = assign_designations(rng, len(names), wmp_count)
+    players = [
+        Player(name=name, designation=designation)
+        for name, designation in zip(names, held)
+    ]
     db.add_all(players)
     db.commit()
+    designation_of = {player.id: player.designation for player in players}
 
     indexes = list(range(len(players)))
     regulars = sorted(rng.sample(indexes, regular_count))
@@ -284,6 +314,11 @@ def seed(
                 playing,
                 current_ratings(db, season.id, playing),
                 history=history,
+                # Passing designations at all is what turns the coed term on,
+                # which is exactly what ticking the box on the board does.
+                designations=(
+                    session_designations(db, session.id) if even_designations else None
+                ),
                 rng=rng,
             )
             team_a, team_b = [list(team) for team in split.teams]
@@ -317,6 +352,10 @@ def seed(
                     "winner": "A" if winner == 0 else "B",
                     "score": f"{winning_score}-{losing_score}",
                     "benched": len(benched),
+                    "wmp": tuple(
+                        sum(1 for pid in team if designation_of[pid] == WMP)
+                        for team in (team_a, team_b)
+                    ),
                 }
             )
 
@@ -334,6 +373,7 @@ def seed(
     roster = [
         {
             "name": player.name,
+            "designation": player.designation,
             "regular": index in set(regulars),
             "sessions": sessions_attended[player.id],
         }
@@ -346,6 +386,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--players", type=int, default=15)
     parser.add_argument("--regulars", type=int, default=8)
+    parser.add_argument(
+        "--wmp",
+        type=int,
+        default=None,
+        help="how many WMPs (default: half the roster, the rest MMPs)",
+    )
+    parser.add_argument(
+        "--no-even-designations",
+        dest="even_designations",
+        action="store_false",
+        help="balance on rating and variety alone, ignoring WMP and MMP",
+    )
     parser.add_argument("--days", type=int, default=15, help="sessions, one a day")
     parser.add_argument("--games", type=int, default=50, help="games in the season")
     parser.add_argument(
@@ -363,6 +415,9 @@ def main() -> int:
         raise SystemExit("there cannot be more regulars than players")
     if args.players > len(NAMES):
         raise SystemExit(f"only {len(NAMES)} names are on hand")
+    # Half and half, with the odd player over on the MMP side: 15 players comes
+    # out as 7 and 8, which is the shape of a coed roster.
+    wmp_count = args.wmp if args.wmp is not None else args.players // 2
 
     url = args.database_url or get_settings().database_url
     start = args.start or date.today() - timedelta(days=args.days - 1)
@@ -378,10 +433,12 @@ def main() -> int:
             rng=rng,
             names=NAMES[: args.players],
             regular_count=args.regulars,
+            wmp_count=wmp_count,
             days=args.days,
             total_games=args.games,
             start=start,
             season_name=args.season_name,
+            even_designations=args.even_designations,
         )
 
         sizes = Counter(r["size"] for day in report for r in day["rounds"])
@@ -402,13 +459,26 @@ def main() -> int:
             share = sizes[size] / played
             print(f"  {size}v{size}: {sizes[size]:>2} games  {share:>5.0%}")
 
+        # A game is only as even as the people who turned up allow, so this is
+        # a check on the balancer rather than a promise about every round.
+        gaps = Counter(
+            abs(r["wmp"][0] - r["wmp"][1]) for day in report for r in day["rounds"]
+        )
+        wmps = sum(1 for entry in roster if entry["designation"] == WMP)
+        print(f"\nCoed splits ({wmps} WMP, {len(roster) - wmps} MMP)")
+        if not args.even_designations:
+            print("  designations ignored (--no-even-designations)")
+        for gap in sorted(gaps):
+            label = "even" if gap == 0 else f"off by {gap}"
+            print(f"  {label:<9} {gaps[gap]:>2} games  {gaps[gap] / played:>5.0%}")
+
         turnouts = {entry["name"]: entry for entry in roster}
         current = current_season(db)
 
         print(f"\nStandings for {current.name}")
         print(
             f"{'#':>3}  {'name':<8}{'rating':>8}{'W-L':>8}{'games':>7}"
-            f"{'sessions':>9}  who"
+            f"{'sessions':>9}{'':>6}  who"
         )
         for row in leaderboard(db, current.id, min_games=0):
             entry = turnouts[row.player.name]
@@ -416,6 +486,7 @@ def main() -> int:
             print(
                 f"{row.rank:>3}  {row.player.name:<8}{row.rating:>8}"
                 f"{row.record:>8}{row.games_played:>7}{turnout:>9}"
+                f"{entry['designation'] or '-':>6}"
                 f"  {'regular' if entry['regular'] else 'sporadic'}"
             )
 
