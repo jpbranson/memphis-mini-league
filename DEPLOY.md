@@ -64,14 +64,40 @@ docker run -d --name mini-league -p 8080:8080 \
 The whole league is one file at `/data/mini_league.db`. Copy it and you have
 everything.
 
+This app suspends when idle, and `fly ssh console` cannot reach a machine that
+is asleep. Load the site first, or start it by hand:
+
 ```bash
-fly ssh console -C "sqlite3 /data/mini_league.db .dump" > backup.sql
+fly machine start $(fly machines list -q)
 ```
 
-Or pull the file directly:
+Take the copy with SQLite's own backup, which is consistent even if someone
+records a game while it runs, then pull it down:
+
+```bash
+fly ssh console -C "python -c \"import sqlite3; src = sqlite3.connect('file:/data/mini_league.db?mode=ro', uri=True); dst = sqlite3.connect('/tmp/backup.db'); src.backup(dst); dst.close()\""
+```
+
+```bash
+fly ssh sftp get /tmp/backup.db ./backup.db
+```
+
+Python does the work because the image is `python:3.12-slim`, which carries the
+SQLite library the app uses but not the `sqlite3` command line tool.
+
+Pulling the live file straight off the volume is quicker and usually fine on a
+league that plays once a week, but it copies a file that may be being written
+to, so keep it for a look rather than for the backup you would restore from:
 
 ```bash
 fly ssh sftp get /data/mini_league.db
+```
+
+Check a backup before trusting it. This prints the schema version and what is
+in it, and says `ok` if the file is sound:
+
+```bash
+uv run python -c "import sqlite3; c = sqlite3.connect('file:backup.db?mode=ro', uri=True); q = lambda s: c.execute(s).fetchone()[0]; print(q('select version_num from alembic_version'), q('select count(*) from games where deleted_at is null'), 'games', q('select count(*) from players'), 'players', q('pragma integrity_check'))"
 ```
 
 Games, teams and check-ins are the source of truth. Ratings are derived, so a
