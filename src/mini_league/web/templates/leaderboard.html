@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Leaderboard — Mini League{% endblock %}
+{% block body %}
+<h1>Leaderboard</h1>
+<p class="sub">
+  {% if season %}{{ season.name }}{% else %}No season yet{% endif %}
+</p>
+
+{% if seasons %}
+<div class="card">
+  <form method="get" action="/">
+    <div class="row wrap">
+      <div class="grow">
+        <label for="season_id">Season</label>
+        <select id="season_id" name="season_id"
+                style="width:100%;padding:11px;border-radius:9px;
+                       border:1px solid var(--line);background:var(--bg);color:var(--ink)">
+          {% for s in seasons %}
+            <option value="{{ s.id }}" {% if season and s.id == season.id %}selected{% endif %}>
+              {{ s.name }}{% if not s.end_date %} (current){% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="width:120px">
+        <label for="min_games">Min games</label>
+        <input type="number" id="min_games" name="min_games" min="0" value="{{ min_games }}"
+               inputmode="numeric">
+      </div>
+    </div>
+    <button class="btn" style="margin-top:10px" type="submit">Show</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  {% include "partials/leaderboard_table.html" %}
+</div>
+
+<p class="muted small">
+  Rating is the conservative estimate, three standard deviations below a player's
+  mean skill, so a player with one lucky win does not top the table.
+</p>
+{% endblock %}

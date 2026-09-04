@@ -106,3 +106,39 @@ class SessionOut(ORMModel):
     notes: str | None
     players: list[SessionPlayerOut]
     games: list[GameOut]
+
+
+class LeaderboardRowOut(ORMModel):
+    rank: int
+    player: PlayerOut
+    rating: int
+    mu: float
+    sigma: float
+    games_played: int
+    wins: int
+    losses: int
+
+
+class SeasonSummaryOut(ORMModel):
+    season: SeasonOut
+    rating: int
+    mu: float
+    sigma: float
+    games_played: int
+    wins: int
+    losses: int
+
+
+class PlayerDetailOut(ORMModel):
+    player: PlayerOut
+    seasons: list[SeasonSummaryOut]
+    all_time: dict[str, int]
+
+
+class RatingPointOut(ORMModel):
+    game_id: int
+    mu_before: float
+    sigma_before: float
+    mu_after: float
+    sigma_after: float
+    rating_after: int

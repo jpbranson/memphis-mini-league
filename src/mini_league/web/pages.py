@@ -1,28 +1,127 @@
-"""Server-rendered organizer pages (design doc section 7, milestone 2).
+"""Server-rendered pages (design doc section 7).
 
-Mobile-first Jinja2 templates driven by HTMX. Most actions re-render the whole
-session board rather than patching pieces of it: at the field, a screen that is
-always consistent beats one that is clever.
+Public: the leaderboard and player pages (milestone 3).
+Organizer: session creation and the day-of board (milestone 2).
 
-Auth is milestone 7, so these pages are currently open.
+Mobile-first Jinja2 templates driven by HTMX. Organizer actions re-render the
+whole session board rather than patching pieces of it: at the field, a screen
+that is always consistent beats one that is clever. The standings drawer is the
+deliberate exception, since it must not disturb an in-progress team assignment.
+
+Auth is milestone 7, so the organizer pages are currently open.
 """
 
 from __future__ import annotations
 
+import random
 from datetime import date as date_type
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
+from trueskill import Rating
 
 from .. import games as games_service
+from .. import leaderboard as leaderboard_service
 from .. import players as players_service
 from .. import seasons as seasons_service
 from .. import sessions as sessions_service
+from .. import teams as teams_service
 from ..models import LeagueSession, Player
+from ..ratings import display_rating
+from ..settings import TeamGenConfig
 from .deps import get_db, templates
 
 router = APIRouter()
+
+DEFAULT_MIN_GAMES = 5
+
+
+# --- shared helpers -------------------------------------------------------------
+
+
+def load_session(db: Session, session_id: int) -> LeagueSession:
+    try:
+        return sessions_service.get_session(db, session_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+def rating_lookup(db: Session, season_id: int):
+    """Callable for templates: player id -> current rating and whether they are new."""
+    snapshots = leaderboard_service.season_ratings(db, season_id)
+    default = leaderboard_service.starting_rating()
+
+    def info(player_id: int) -> dict:
+        snapshot = snapshots.get(player_id)
+        if snapshot is None or snapshot.games_played == 0:
+            return {"rating": display_rating(default), "games": 0, "is_new": True}
+        return {
+            "rating": display_rating(Rating(snapshot.mu, snapshot.sigma)),
+            "games": snapshot.games_played,
+            "is_new": False,
+        }
+
+    return info
+
+
+def session_history(db: Session, session_id: int) -> list[list[list[int]]]:
+    """Team rosters of this session's games, oldest first, for the variety score."""
+    games = sorted(
+        games_service.session_games(db, session_id), key=lambda g: (g.played_at, g.id)
+    )
+    return [
+        [list(t.player_ids) for t in sorted(g.teams, key=lambda t: t.team_index)]
+        for g in games
+    ]
+
+
+def parse_assignments(form) -> dict[int, int]:
+    """Map player_id -> team_index from `assign_<player_id>` form fields."""
+    assignments: dict[int, int] = {}
+    for key, value in form.multi_items():
+        if not key.startswith("assign_"):
+            continue
+        if value in ("0", "1"):
+            assignments[int(key.removeprefix("assign_"))] = int(value)
+    return assignments
+
+
+def matchup(db: Session, session: LeagueSession, assignments: dict[int, int]) -> dict:
+    """Team strengths and predicted result for the current assignment."""
+    side_a = [pid for pid, team in assignments.items() if team == 0]
+    side_b = [pid for pid, team in assignments.items() if team == 1]
+    if not side_a or not side_b:
+        return {"ready": False, "count_a": len(side_a), "count_b": len(side_b)}
+
+    ratings = leaderboard_service.current_ratings(
+        db, session.season_id, side_a + side_b
+    )
+    summary = teams_service.describe_matchup(
+        [ratings[p] for p in side_a], [ratings[p] for p in side_b]
+    )
+
+    # The board rating is deliberately pessimistic about newcomers, while the
+    # prediction treats them as average. When a side has new players the two
+    # disagree, so say which one to trust rather than leaving it looking wrong.
+    rating_info = rating_lookup(db, session.season_id)
+    new_a = sum(1 for pid in side_a if rating_info(pid)["is_new"])
+    new_b = sum(1 for pid in side_b if rating_info(pid)["is_new"])
+
+    summary.update(
+        {
+            "ready": True,
+            "count_a": len(side_a),
+            "count_b": len(side_b),
+            "new_a": new_a,
+            "new_b": new_b,
+            "has_new": bool(new_a or new_b),
+        }
+    )
+    return summary
+
+
+# --- the session board ----------------------------------------------------------
 
 
 def checkin_candidates(db: Session, session: LeagueSession, query: str = "") -> list[dict]:
@@ -42,9 +141,7 @@ def checkin_candidates(db: Session, session: LeagueSession, query: str = "") -> 
     if query:
         players = [m.player for m in players_service.search_players(db, query)]
     else:
-        players = [
-            p for p in players_service.list_players(db) if not is_present(p.id)
-        ]
+        players = [p for p in players_service.list_players(db) if not is_present(p.id)]
     return [{"player": p, "present": is_present(p.id)} for p in players]
 
 
@@ -56,11 +153,13 @@ def board_context(
     notice: str | None = None,
     duplicate_name: str | None = None,
     duplicate_matches: list | None = None,
+    assignment: dict[int, int] | None = None,
 ) -> dict:
     roster = sessions_service.session_roster(db, session.id)
     present = [sp for sp in roster if sp.checked_out_at is None]
     away = [sp for sp in roster if sp.checked_out_at is not None]
     all_games = games_service.session_games(db, session.id, include_deleted=True)
+    assignment = assignment or {}
     return {
         "session": session,
         "season": session.season,
@@ -71,6 +170,9 @@ def board_context(
         "games": [g for g in all_games if g.deleted_at is None],
         "deleted_games": [g for g in all_games if g.deleted_at is not None],
         "player_name": lambda pid: db.get(Player, pid).name,
+        "rating_of": rating_lookup(db, session.season_id),
+        "assignment": assignment,
+        "matchup": matchup(db, session, assignment),
         "error": error,
         "notice": notice,
         "duplicate_name": duplicate_name,
@@ -87,6 +189,7 @@ def render_board(
     notice: str | None = None,
     duplicate_name: str | None = None,
     duplicate_matches: list | None = None,
+    assignment: dict[int, int] | None = None,
     status_code: int = 200,
 ) -> HTMLResponse:
     ctx = board_context(
@@ -96,6 +199,7 @@ def render_board(
         notice=notice,
         duplicate_name=duplicate_name,
         duplicate_matches=duplicate_matches,
+        assignment=assignment,
     )
     ctx["request"] = request
     return templates.TemplateResponse(
@@ -103,17 +207,129 @@ def render_board(
     )
 
 
-def load_session(db: Session, session_id: int) -> LeagueSession:
-    try:
-        return sessions_service.get_session(db, session_id)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+# --- public pages (milestone 3) --------------------------------------------------
 
 
-@router.get("/", include_in_schema=False)
-def index():
-    """The public leaderboard is milestone 3; for now go straight to the organizer."""
-    return RedirectResponse("/admin", status_code=307)
+def leaderboard_context(
+    db: Session, season_id: int | None, min_games: int, *, compact: bool = False
+) -> dict:
+    all_seasons = seasons_service.list_seasons(db)
+    season = None
+    if season_id is not None:
+        season = next((s for s in all_seasons if s.id == season_id), None)
+    if season is None:
+        season = seasons_service.current_season(db) or (
+            all_seasons[0] if all_seasons else None
+        )
+
+    rows = (
+        leaderboard_service.leaderboard(db, season.id, min_games=min_games)
+        if season
+        else []
+    )
+    total = (
+        len(leaderboard_service.leaderboard(db, season.id, min_games=0)) if season else 0
+    )
+    return {
+        "season": season,
+        "seasons": all_seasons,
+        "rows": rows,
+        "min_games": min_games,
+        "hidden_count": total - len(rows),
+        "compact": compact,
+    }
+
+
+@router.get("/", response_class=HTMLResponse)
+def leaderboard_page(
+    request: Request,
+    season_id: int | None = None,
+    min_games: int = Query(default=DEFAULT_MIN_GAMES, ge=0),
+    db: Session = Depends(get_db),
+):
+    ctx = leaderboard_context(db, season_id, min_games)
+    return templates.TemplateResponse(request, "leaderboard.html", ctx)
+
+
+@router.get("/panel/leaderboard", response_class=HTMLResponse)
+def leaderboard_panel(
+    request: Request,
+    season_id: int | None = None,
+    min_games: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    """Standings for the slide-out drawer.
+
+    Rendered into the drawer only, so an organizer can check the table without
+    losing a team assignment they are part way through.
+    """
+    ctx = leaderboard_context(db, season_id, min_games, compact=True)
+    return templates.TemplateResponse(request, "partials/leaderboard_table.html", ctx)
+
+
+@router.get("/players/{player_id}", response_class=HTMLResponse)
+def player_page(
+    request: Request,
+    player_id: int,
+    season_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    player = db.get(Player, player_id)
+    if player is None:
+        raise HTTPException(status_code=404, detail=f"player {player_id} does not exist")
+
+    summaries = leaderboard_service.player_seasons(db, player_id)
+    chosen = None
+    if season_id is not None:
+        chosen = next((s for s in summaries if s.season.id == season_id), None)
+    if chosen is None:
+        chosen = summaries[0] if summaries else None
+
+    history = (
+        leaderboard_service.rating_history(db, player_id, chosen.season.id)
+        if chosen
+        else []
+    )
+    points = [
+        {
+            "game": index + 1,
+            "mu": round(row.mu_after, 2),
+            "sigma": round(row.sigma_after, 2),
+            "rating": display_rating(Rating(row.mu_after, row.sigma_after)),
+        }
+        for index, row in enumerate(history)
+    ]
+    if history:
+        first = history[0]
+        points.insert(
+            0,
+            {
+                "game": 0,
+                "mu": round(first.mu_before, 2),
+                "sigma": round(first.sigma_before, 2),
+                "rating": display_rating(Rating(first.mu_before, first.sigma_before)),
+            },
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "player.html",
+        {
+            "player": player,
+            "summaries": summaries,
+            "current": chosen,
+            "points": points,
+            "appearances": (
+                leaderboard_service.player_games(db, player_id, chosen.season.id)
+                if chosen
+                else []
+            ),
+            "all_time": leaderboard_service.all_time_record(db, player_id),
+        },
+    )
+
+
+# --- organizer pages -------------------------------------------------------------
 
 
 @router.get("/admin", response_class=HTMLResponse)
@@ -178,11 +394,7 @@ def create_session(
         return templates.TemplateResponse(
             request,
             "session_new.html",
-            {
-                "today": date_type.today(),
-                "current_season": None,
-                "error": str(exc),
-            },
+            {"today": date_type.today(), "current_season": None, "error": str(exc)},
             status_code=400,
         )
     return RedirectResponse(f"/admin/session/{session.id}", status_code=303)
@@ -209,6 +421,7 @@ def player_search(
             "session": session,
             "candidates": checkin_candidates(db, session, q),
             "query": q.strip(),
+            "rating_of": rating_lookup(db, session.season_id),
         },
     )
 
@@ -272,15 +485,78 @@ def add_player(
     return render_board(request, db, session, notice=f"Added {player.name} and checked them in.")
 
 
-def parse_assignments(form) -> dict[int, int]:
-    """Map player_id -> team_index from `assign_<player_id>` form fields."""
-    assignments: dict[int, int] = {}
-    for key, value in form.multi_items():
-        if not key.startswith("assign_"):
-            continue
-        if value in ("0", "1"):
-            assignments[int(key.removeprefix("assign_"))] = int(value)
-    return assignments
+# --- team balancing --------------------------------------------------------------
+
+
+def render_record_card(
+    request: Request,
+    db: Session,
+    session: LeagueSession,
+    assignment: dict[int, int],
+    *,
+    notice: str | None = None,
+) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "partials/record_form.html",
+        {
+            "session": session,
+            "present": [
+                sp
+                for sp in sessions_service.session_roster(db, session.id)
+                if sp.checked_out_at is None
+            ],
+            "assignment": assignment,
+            "matchup": matchup(db, session, assignment),
+            "rating_of": rating_lookup(db, session.season_id),
+            "balance_notice": notice,
+        },
+    )
+
+
+@router.post("/admin/session/{session_id}/balance", response_class=HTMLResponse)
+def balance_teams(request: Request, session_id: int, db: Session = Depends(get_db)):
+    """Split the checked-in players into two balanced teams (design doc section 5).
+
+    Chosen at random from the closest few splits, and biased against repeating
+    this session's pairings, so the same group does not get the same teams
+    every round. The organizer can still move anyone by hand afterwards.
+    """
+    session = load_session(db, session_id)
+    present = sessions_service.checked_in_players(db, session_id)
+    if len(present) < 2:
+        return render_record_card(
+            request, db, session, {}, notice="Check in at least two players first."
+        )
+
+    player_ids = [p.id for p in present]
+    ratings = leaderboard_service.current_ratings(db, session.season_id, player_ids)
+    split = teams_service.generate_teams(
+        player_ids,
+        ratings,
+        history=session_history(db, session_id),
+        team_config=TeamGenConfig(),
+        rng=random.Random(),
+    )
+    assignment = {
+        pid: index for index, roster in enumerate(split.teams) for pid in roster
+    }
+    return render_record_card(request, db, session, assignment)
+
+
+@router.post("/admin/session/{session_id}/preview", response_class=HTMLResponse)
+async def preview_matchup(request: Request, session_id: int, db: Session = Depends(get_db)):
+    """Recompute the team strengths as the organizer moves players around."""
+    session = load_session(db, session_id)
+    form = await request.form()
+    return templates.TemplateResponse(
+        request,
+        "partials/balance_panel.html",
+        {"matchup": matchup(db, session, parse_assignments(form))},
+    )
+
+
+# --- recording results -----------------------------------------------------------
 
 
 def build_teams(
@@ -302,9 +578,7 @@ def build_teams(
     scores = [parse_score(score_a), parse_score(score_b)]
     return [
         games_service.TeamInput(
-            player_ids=team_players[i],
-            rank=1 if i == winner else 2,
-            score=scores[i],
+            player_ids=team_players[i], rank=1 if i == winner else 2, score=scores[i]
         )
         for i in (0, 1)
     ]
@@ -318,14 +592,18 @@ async def record_result(request: Request, session_id: int, db: Session = Depends
     winner_raw = form.get("winner")
 
     if winner_raw not in ("0", "1"):
-        return render_board(request, db, session, error="Pick the winning team.", status_code=400)
+        return render_board(
+            request,
+            db,
+            session,
+            error="Pick the winning team.",
+            assignment=assignments,
+            status_code=400,
+        )
 
     try:
         teams = build_teams(
-            assignments,
-            int(winner_raw),
-            form.get("score_0", ""),
-            form.get("score_1", ""),
+            assignments, int(winner_raw), form.get("score_0", ""), form.get("score_1", "")
         )
         on_field_raw = (form.get("players_on_field") or "").strip()
         game = games_service.record_game(
@@ -335,7 +613,10 @@ async def record_result(request: Request, session_id: int, db: Session = Depends
             players_on_field=int(on_field_raw) if on_field_raw else None,
         )
     except ValueError as exc:
-        return render_board(request, db, session, error=str(exc), status_code=400)
+        # Keep the assignment so the organizer only has to fix what was wrong.
+        return render_board(
+            request, db, session, error=str(exc), assignment=assignments, status_code=400
+        )
 
     return render_board(request, db, session, notice=f"Recorded round {game.round_number}.")
 
@@ -366,32 +647,34 @@ def restore_game(request: Request, game_id: int, db: Session = Depends(get_db)):
     return render_board(request, db, session, notice="Round restored.")
 
 
+def edit_context(db: Session, game, assignments: dict[int, int] | None = None) -> dict:
+    game_teams = sorted(game.teams, key=lambda t: t.team_index)
+    assignment = assignments or {
+        pid: t.team_index for t in game_teams for pid in t.player_ids
+    }
+    candidates = {p.id: p for p in sessions_service.checked_in_players(db, game.session_id)}
+    for team in game_teams:
+        for pid in team.player_ids:
+            candidates.setdefault(pid, db.get(Player, pid))
+    return {
+        "game": game,
+        "session": game.session,
+        "teams": game_teams,
+        "assignment": assignment,
+        "candidates": sorted(candidates.values(), key=lambda p: p.name),
+        "rating_of": rating_lookup(db, game.session.season_id),
+    }
+
+
 @router.get("/admin/games/{game_id}/edit", response_class=HTMLResponse)
 def edit_game_form(request: Request, game_id: int, db: Session = Depends(get_db)):
     try:
         game = games_service.get_game(db, game_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-    teams = sorted(game.teams, key=lambda t: t.team_index)
-    assignment = {pid: t.team_index for t in teams for pid in t.player_ids}
-    # Offer everyone in the game plus anyone currently checked in.
-    candidates = {p.id: p for p in sessions_service.checked_in_players(db, game.session_id)}
-    for pid in assignment:
-        candidates.setdefault(pid, db.get(Player, pid))
-
-    return templates.TemplateResponse(
-        request,
-        "game_edit.html",
-        {
-            "game": game,
-            "session": game.session,
-            "teams": teams,
-            "assignment": assignment,
-            "candidates": sorted(candidates.values(), key=lambda p: p.name),
-            "winner_index": next(t.team_index for t in teams if t.rank == 1),
-        },
-    )
+    ctx = edit_context(db, game)
+    ctx["winner_index"] = next(t.team_index for t in ctx["teams"] if t.rank == 1)
+    return templates.TemplateResponse(request, "game_edit.html", ctx)
 
 
 @router.post("/admin/games/{game_id}/edit")
@@ -406,25 +689,10 @@ async def apply_game_edit(request: Request, game_id: int, db: Session = Depends(
     winner_raw = form.get("winner")
 
     def rerender(message: str):
-        teams = sorted(game.teams, key=lambda t: t.team_index)
-        candidates = {p.id: p for p in sessions_service.checked_in_players(db, game.session_id)}
-        for t in teams:
-            for pid in t.player_ids:
-                candidates.setdefault(pid, db.get(Player, pid))
-        return templates.TemplateResponse(
-            request,
-            "game_edit.html",
-            {
-                "game": game,
-                "session": game.session,
-                "teams": teams,
-                "assignment": assignments or {pid: t.team_index for t in teams for pid in t.player_ids},
-                "candidates": sorted(candidates.values(), key=lambda p: p.name),
-                "winner_index": int(winner_raw) if winner_raw in ("0", "1") else 0,
-                "error": message,
-            },
-            status_code=400,
-        )
+        ctx = edit_context(db, game, assignments or None)
+        ctx["winner_index"] = int(winner_raw) if winner_raw in ("0", "1") else 0
+        ctx["error"] = message
+        return templates.TemplateResponse(request, "game_edit.html", ctx, status_code=400)
 
     if winner_raw not in ("0", "1"):
         return rerender("Pick the winning team.")

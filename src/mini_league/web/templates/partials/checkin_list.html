@@ -6,6 +6,9 @@
       <li>
         <span>
           {{ entry.player.name }}
+          <span class="rating">
+            {%- if rating_of(entry.player.id).is_new %}new{% else %}{{ rating_of(entry.player.id).rating }}{% endif -%}
+          </span>
           {% if not entry.player.active %}<span class="muted small">inactive</span>{% endif %}
           {% if entry.present %}<span class="muted small">already checked in</span>{% endif %}
         </span>

@@ -1,0 +1,41 @@
+{# Live matchup readout, refreshed by htmx whenever an assignment changes. #}
+{% if matchup.ready %}
+  {% set pa = (matchup.win_probability_a * 100) | round | int %}
+  {% set pb = 100 - pa %}
+  <div class="row between small">
+    <span><span class="teamA">Team A</span>
+      <strong class="rating" style="color:inherit">{{ matchup.rating_a }}</strong>
+      <span class="muted">({{ matchup.count_a }})</span></span>
+    <span><span class="teamB">Team B</span>
+      <strong class="rating" style="color:inherit">{{ matchup.rating_b }}</strong>
+      <span class="muted">({{ matchup.count_b }})</span></span>
+  </div>
+  <div class="bar">
+    <div class="a" style="width: {{ pa }}%"></div>
+    <div class="b" style="width: {{ pb }}%"></div>
+  </div>
+  <div class="muted small">
+    {{ matchup.verdict }}. Predicted {{ pa }}% to {{ pb }}%,
+    at {{ matchup.players_on_field }} per team on the field.
+  </div>
+  {% if matchup.count_a != matchup.count_b %}
+    <div class="muted small">
+      Uneven rosters, so the bigger team is weighted down rather than treated as stronger.
+    </div>
+  {% endif %}
+  {% if matchup.has_new %}
+    <div class="muted small">
+      The totals read low for
+      {% if matchup.new_a and matchup.new_b %}both teams{% elif matchup.new_a %}Team A{% else %}Team B{% endif %},
+      which {{ "include" if (matchup.new_a + matchup.new_b) > 1 else "includes" }}
+      {{ matchup.new_a + matchup.new_b }} new
+      player{{ "" if (matchup.new_a + matchup.new_b) == 1 else "s" }}
+      rated 0 until they have played. The prediction already treats them as average,
+      so trust the percentages here.
+    </div>
+  {% endif %}
+{% else %}
+  <p class="muted small" style="margin:0">
+    Put at least one player on each team to see how the match looks.
+  </p>
+{% endif %}

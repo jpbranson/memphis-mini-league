@@ -31,6 +31,10 @@ class TeamGenConfig:
     w_balance: float = 1.0
     w_variety: float = 0.3
     top_n: int = 5
+    # A split is only a candidate if its cost is within this much of the best
+    # one. Without it, a small group with few possible splits would fill the
+    # top_n quota with clearly worse teams and pick one at random.
+    cost_tolerance: float = 0.12
     sample_size: int = 5000
     enumerate_max_players: int = 12
 

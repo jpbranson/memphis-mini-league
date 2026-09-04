@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}{{ player.name }} — Mini League{% endblock %}
+{% block body %}
+<h1>{{ player.name }}</h1>
+<p class="sub">
+  {% if not player.active %}Inactive. {% endif %}
+  All time {{ all_time.wins }}-{{ all_time.losses }}
+  across {{ all_time.seasons_played }} season{{ '' if all_time.seasons_played == 1 else 's' }}.
+</p>
+
+{% if not current %}
+  <div class="card"><p class="muted small">No games recorded for this player yet.</p></div>
+{% else %}
+
+{% if summaries|length > 1 %}
+<div class="card">
+  <label for="season_id">Season</label>
+  <form method="get" action="/players/{{ player.id }}">
+    <select id="season_id" name="season_id" onchange="this.form.submit()"
+            style="width:100%;padding:11px;border-radius:9px;
+                   border:1px solid var(--line);background:var(--bg);color:var(--ink)">
+      {% for s in summaries %}
+        <option value="{{ s.season.id }}" {% if s.season.id == current.season.id %}selected{% endif %}>
+          {{ s.season.name }}
+        </option>
+      {% endfor %}
+    </select>
+    <noscript><button class="btn small" style="margin-top:8px" type="submit">Show</button></noscript>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>{{ current.season.name }}</h2>
+  <table class="board">
+    <tbody>
+      <tr><td>Rating</td><td class="num"><strong>{{ current.rating }}</strong></td></tr>
+      <tr><td>Record</td><td class="num">{{ current.wins }}-{{ current.losses }}</td></tr>
+      <tr><td>Games</td><td class="num">{{ current.games_played }}</td></tr>
+      <tr><td>Skill estimate (mu)</td><td class="num">{{ "%.2f"|format(current.mu) }}</td></tr>
+      <tr><td>Uncertainty (sigma)</td><td class="num">{{ "%.2f"|format(current.sigma) }}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+{% if points|length > 1 %}
+<div class="card">
+  <h2>Rating over time</h2>
+  <canvas id="ratingChart" height="220"></canvas>
+  <p class="muted small" style="margin-bottom:0">
+    The band is one standard deviation either side of the mean skill estimate.
+    It narrows as the league learns more about this player.
+  </p>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Games</h2>
+  {% if appearances %}
+    <ul class="plain">
+      {% for a in appearances %}
+        <li style="flex-direction:column; align-items:stretch">
+          <div class="row between">
+            <span>
+              <strong>{{ "Won" if a.won else "Lost" }}</strong>
+              {% if a.score_for is not none and a.score_against is not none %}
+                <span class="muted">{{ a.score_for }}-{{ a.score_against }}</span>
+              {% endif %}
+            </span>
+            <span class="muted small">{{ a.session_date }}, round {{ a.round_number }}</span>
+          </div>
+          <div class="small muted" style="margin-top:3px">
+            With {{ a.teammates | map(attribute="name") | join(", ") or "nobody" }}
+            &middot; against {{ a.opponents | map(attribute="name") | join(", ") }}
+          </div>
+          {% if a.mu_before is not none %}
+            <div class="small muted">
+              Skill {{ "%.2f"|format(a.mu_before) }} &rarr; {{ "%.2f"|format(a.mu_after) }}
+            </div>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted small">No games this season.</p>
+  {% endif %}
+</div>
+
+{% if points|length > 1 %}
+<script src="/static/chart.min.js"></script>
+<script id="rating-points" type="application/json">{{ points | tojson }}</script>
+<script>
+  (function () {
+    var el = document.getElementById('ratingChart');
+    var raw = document.getElementById('rating-points');
+    if (!el || !raw || typeof Chart === 'undefined') { return; }
+    var points = JSON.parse(raw.textContent);
+    var css = getComputedStyle(document.documentElement);
+    var ink = css.getPropertyValue('--ink').trim() || '#16191d';
+    var accent = css.getPropertyValue('--accent').trim() || '#1f6feb';
+    var muted = css.getPropertyValue('--muted').trim() || '#666e79';
+    new Chart(el, {
+      type: 'line',
+      data: {
+        labels: points.map(function (p) { return p.game === 0 ? 'start' : 'game ' + p.game; }),
+        datasets: [
+          {
+            label: 'Rating',
+            data: points.map(function (p) { return p.rating; }),
+            borderColor: accent,
+            backgroundColor: accent,
+            tension: 0.25,
+            yAxisID: 'y'
+          },
+          {
+            label: 'Skill (mu)',
+            data: points.map(function (p) { return p.mu; }),
+            borderColor: muted,
+            borderDash: [5, 4],
+            pointRadius: 0,
+            tension: 0.25,
+            yAxisID: 'y1'
+          },
+          {
+            label: 'mu + sigma',
+            data: points.map(function (p) { return p.mu + p.sigma; }),
+            borderColor: 'transparent',
+            pointRadius: 0,
+            fill: '+1',
+            backgroundColor: 'rgba(128,128,128,0.15)',
+            yAxisID: 'y1'
+          },
+          {
+            label: 'mu - sigma',
+            data: points.map(function (p) { return p.mu - p.sigma; }),
+            borderColor: 'transparent',
+            pointRadius: 0,
+            yAxisID: 'y1'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: ink, filter: function (i) { return i.text.indexOf('sigma') === -1; } } }
+        },
+        scales: {
+          x: { ticks: { color: muted } },
+          y: { position: 'left', ticks: { color: muted }, title: { display: true, text: 'Rating', color: muted } },
+          y1: { position: 'right', ticks: { color: muted }, grid: { drawOnChartArea: false },
+                title: { display: true, text: 'Skill', color: muted } }
+        }
+      }
+    });
+  })();
+</script>
+{% endif %}
+
+{% endif %}
+{% endblock %}

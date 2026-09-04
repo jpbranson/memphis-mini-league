@@ -6,17 +6,23 @@ balanced team generation, and a leaderboard. See
 
 ## Status
 
-Milestones 1 and 2 are done.
+Milestones 1, 2 and 3 are done.
 
 1. **Core**: data model, Alembic migrations, TrueSkill ratings, `recompute_ratings()`.
 2. **Organizer flow**: create a session, check players in with fuzzy search and
-   duplicate warnings, record results by assigning players to teams, edit and
-   delete rounds.
+   duplicate warnings, record results, edit and delete rounds.
+3. **Leaderboard and player pages**: season standings, per-player rating history
+   with a chart, reachable from a standings drawer on every page.
 
-Not built yet: the public leaderboard and player pages (milestone 3), player
-merge (milestone 4), automatic team generation (milestone 5), and the organizer
-password (milestone 7). Every page is currently unauthenticated, so do not put
-this on a public address yet.
+The session board also shows each player's rating, balances teams on request,
+and previews the matchup as players are moved. Team balancing was brought
+forward from milestone 5; the swap-and-regenerate refinements there are still
+open.
+
+Not built yet: player merge (milestone 4), the rest of team generation
+(milestone 5), the simulator (milestone 6), and the organizer password
+(milestone 7). Every page is currently unauthenticated, so do not put this on a
+public address yet.
 
 ## Run the app
 
@@ -52,7 +58,7 @@ nothing to activate.
 uv run pytest
 ```
 
-167 tests, about 9 seconds. Coverage by file:
+253 tests, about 20 seconds. Coverage by file:
 
 | File | What it checks |
 |---|---|
@@ -65,6 +71,10 @@ uv run pytest
 | `tests/test_game_edits.py` | Editing, deleting, restoring games, and the audit trail |
 | `tests/test_api.py` | The JSON API end to end |
 | `tests/test_pages.py` | The organizer pages and their HTMX partials |
+| `tests/test_teams.py` | Balancing: split enumeration, balance and variety costs, uneven teams |
+| `tests/test_leaderboard.py` | Standings, filters, player history and game lists |
+| `tests/test_board_teams.py` | Ratings on the board, the balance button, the matchup panel |
+| `tests/test_public_pages.py` | Leaderboard, player pages, and the standings drawer |
 
 Useful variants:
 
@@ -78,8 +88,8 @@ uv run pytest tests/test_ratings.py -k partial_play -v
 
 ## Run the demo
 
-No UI exists yet, so this script plays one morning of games end to end and is
-the way to see the system work by hand.
+This script plays one morning of games end to end against a throwaway database,
+without touching the web layer. Useful for checking the rating maths on its own.
 
 ```bash
 uv run python scripts/demo.py
@@ -134,6 +144,8 @@ uv run alembic revision --autogenerate -m "describe the change"
 - `src/mini_league/sessions.py` - session creation, check-in and check-out
 - `src/mini_league/seasons.py` - season lookup and creation
 - `src/mini_league/audit.py` - audit entries carrying full before-state
-- `src/mini_league/web/` - FastAPI app, JSON API, Jinja2 templates
+- `src/mini_league/teams.py` - balanced team generation, a pure function
+- `src/mini_league/leaderboard.py` - read models for standings and player pages
+- `src/mini_league/web/` - FastAPI app, JSON API, Jinja2 templates, vendored htmx and Chart.js
 - `alembic/` - migrations
 - `scripts/demo.py` - manual end-to-end smoke test

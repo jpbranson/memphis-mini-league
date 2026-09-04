@@ -215,3 +215,78 @@ def test_openapi_schema_is_served(client):
         "/api/games/{game_id}",
     ]:
         assert path in paths
+
+
+# --- milestone 3: leaderboard and player detail ---------------------------------
+
+
+def play_api(client, session_id, winners, losers, score=None):
+    teams = [
+        {"player_ids": winners, "rank": 1, "score": score[0] if score else None},
+        {"player_ids": losers, "rank": 2, "score": score[1] if score else None},
+    ]
+    return client.post(f"/api/sessions/{session_id}/games", json={"teams": teams})
+
+
+def test_leaderboard_endpoint(client, api_session, make_api_players):
+    ada, ben, cleo, dev = make_api_players("Ada", "Ben", "Cleo", "Dev")
+    play_api(client, api_session, [ada, ben], [cleo, dev], score=(5, 3))
+
+    rows = client.get("/api/leaderboard").json()
+    assert [r["rank"] for r in rows] == [1, 2, 3, 4]
+    assert rows[0]["rating"] >= rows[-1]["rating"]
+    winners = {r["player"]["id"] for r in rows[:2]}
+    assert winners == {ada, ben}
+    assert rows[0]["wins"] == 1 and rows[0]["losses"] == 0
+    assert rows[0]["games_played"] == 1
+
+
+def test_leaderboard_min_games_filter(client, api_session, make_api_players):
+    ada, ben = make_api_players("Ada", "Ben")
+    play_api(client, api_session, [ada], [ben])
+    assert len(client.get("/api/leaderboard", params={"min_games": 1}).json()) == 2
+    assert client.get("/api/leaderboard", params={"min_games": 2}).json() == []
+
+
+def test_leaderboard_without_a_season_is_empty(client):
+    assert client.get("/api/leaderboard").json() == []
+
+
+def test_player_detail_endpoint(client, api_session, make_api_players):
+    ada, ben = make_api_players("Ada", "Ben")
+    play_api(client, api_session, [ada], [ben])
+
+    body = client.get(f"/api/players/{ada}").json()
+    assert body["player"]["name"] == "Ada"
+    assert len(body["seasons"]) == 1
+    assert body["seasons"][0]["season"]["name"] == "Fall 2026"
+    assert body["seasons"][0]["wins"] == 1
+    assert body["all_time"] == {
+        "wins": 1,
+        "losses": 0,
+        "games_played": 1,
+        "seasons_played": 1,
+    }
+
+
+def test_player_history_endpoint(client, api_session, make_api_players):
+    ada, ben = make_api_players("Ada", "Ben")
+    play_api(client, api_session, [ada], [ben])
+    play_api(client, api_session, [ada], [ben])
+
+    points = client.get(f"/api/players/{ada}/history").json()
+    assert len(points) == 2
+    assert points[0]["mu_before"] == 25.0
+    assert points[1]["mu_before"] == points[0]["mu_after"]
+    assert points[1]["mu_after"] > points[0]["mu_after"]
+    assert points[1]["rating_after"] > points[0]["rating_after"]
+
+
+def test_player_endpoints_404_for_unknown_player(client):
+    assert client.get("/api/players/999").status_code == 404
+    assert client.get("/api/players/999/history").status_code == 404
+
+
+def test_player_history_is_empty_for_an_unplayed_player(client, api_season, make_api_players):
+    (ada,) = make_api_players("Ada")
+    assert client.get(f"/api/players/{ada}/history").json() == []

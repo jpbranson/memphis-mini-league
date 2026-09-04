@@ -90,9 +90,54 @@
   .teamA { color: var(--a); font-weight: 600; }
   .teamB { color: var(--b); font-weight: 600; }
   .htmx-request { opacity: .6; }
+  .rating { font-variant-numeric: tabular-nums; color: var(--muted); font-size: .85rem; }
+  .topbar {
+    position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; align-items: center;
+    justify-content: space-between; padding: 8px 14px;
+    background: var(--bg); border-bottom: 1px solid var(--line);
+  }
+  .topbar .brand { font-weight: 700; text-decoration: none; color: var(--ink); }
+  /* Drawer overlays the page; the page DOM underneath is never replaced, so an
+     in-progress team assignment survives opening and closing it. */
+  #drawer { position: fixed; inset: 0; z-index: 40; }
+  #drawer .scrim { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
+  #drawer .panel {
+    position: absolute; top: 0; bottom: 0; left: 0; width: min(88vw, 380px);
+    background: var(--card); border-right: 1px solid var(--line);
+    padding: 14px; overflow-y: auto; box-shadow: 0 0 30px rgba(0,0,0,.3);
+  }
+  table.board { width: 100%; border-collapse: collapse; }
+  table.board th, table.board td {
+    text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line);
+    font-size: .92rem;
+  }
+  table.board th { color: var(--muted); font-weight: 600; font-size: .8rem; }
+  table.board td.num, table.board th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bar { display: flex; height: 8px; border-radius: 5px; overflow: hidden; margin: 8px 0 6px; }
+  .bar .a { background: var(--a); }
+  .bar .b { background: var(--b); }
 </style>
 </head>
 <body>
+<header class="topbar">
+  <button class="btn small" id="menu-btn"
+          hx-get="/panel/leaderboard" hx-target="#drawer-body" hx-swap="innerHTML">
+    &#9776; Standings</button>
+  <a class="brand" href="/">Mini League</a>
+  <a class="btn small" href="/admin">Organizer</a>
+</header>
+
+<aside id="drawer" hidden>
+  <div class="scrim" data-close-drawer></div>
+  <div class="panel">
+    <div class="row between" style="margin-bottom:10px">
+      <strong>Standings</strong>
+      <button class="btn small" data-close-drawer>Close</button>
+    </div>
+    <div id="drawer-body"><p class="muted small">Loading…</p></div>
+  </div>
+</aside>
+
 <main>
   {% block body %}{% endblock %}
 </main>
@@ -115,6 +160,20 @@
         event.detail.isError = false;
       }
     });
+
+    // Standings drawer. It only ever touches its own subtree, so whatever the
+    // organizer has part way set up on the page stays exactly as it was.
+    var drawer = document.getElementById('drawer');
+    var menuButton = document.getElementById('menu-btn');
+    if (drawer && menuButton) {
+      menuButton.addEventListener('click', function () { drawer.hidden = false; });
+      drawer.addEventListener('click', function (event) {
+        if (event.target.hasAttribute('data-close-drawer')) { drawer.hidden = true; }
+      });
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') { drawer.hidden = true; }
+      });
+    }
   });
 </script>
 </body>

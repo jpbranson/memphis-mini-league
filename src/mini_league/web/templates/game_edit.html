@@ -12,7 +12,11 @@
       {% for player in candidates %}
         {% set current = assignment.get(player.id) %}
         <li>
-          <span>{{ player.name }}</span>
+          <span>{{ player.name }}
+            <span class="rating">
+              {%- if rating_of(player.id).is_new %}new{% else %}{{ rating_of(player.id).rating }}{% endif -%}
+            </span>
+          </span>
           <span class="seg">
             <label><input type="radio" name="assign_{{ player.id }}" value="0"
                    {% if current == 0 %}checked{% endif %}><span>A</span></label>

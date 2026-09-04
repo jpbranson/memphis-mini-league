@@ -9,10 +9,11 @@ def text(response) -> str:
     return response.text
 
 
-def test_root_redirects_to_admin(client):
-    r = client.get("/", follow_redirects=False)
-    assert r.status_code == 307
-    assert r.headers["location"] == "/admin"
+def test_root_is_the_public_leaderboard(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "Leaderboard" in text(r)
+    assert "No seasons yet" in text(r)
 
 
 def test_admin_home_asks_for_a_season_when_none_exists(client):

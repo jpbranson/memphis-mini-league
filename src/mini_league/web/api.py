@@ -13,21 +13,27 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from .. import games as games_service
+from .. import leaderboard as leaderboard_service
 from .. import players as players_service
 from .. import seasons as seasons_service
 from .. import sessions as sessions_service
-from ..models import Game, LeagueSession
+from ..models import Game, LeagueSession, Player
+from ..ratings import display_rating
 from .deps import get_db
 from .schemas import (
     CheckInRequest,
     GameCreate,
     GameOut,
     GameUpdate,
+    LeaderboardRowOut,
     PlayerCreate,
+    PlayerDetailOut,
     PlayerMatchOut,
     PlayerOut,
+    RatingPointOut,
     SeasonCreate,
     SeasonOut,
+    SeasonSummaryOut,
     SessionCreate,
     SessionOut,
     TeamOut,
@@ -113,6 +119,82 @@ def search_players(
             is_duplicate=m.is_duplicate,
         )
         for m in matches
+    ]
+
+
+@router.get("/leaderboard", response_model=list[LeaderboardRowOut])
+def get_leaderboard(
+    season_id: int | None = None,
+    min_games: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    """Standings for a season, best first. Defaults to the current season."""
+    if season_id is None:
+        season = seasons_service.current_season(db)
+        if season is None:
+            return []
+        season_id = season.id
+    return [
+        LeaderboardRowOut(
+            rank=row.rank,
+            player=PlayerOut.model_validate(row.player, from_attributes=True),
+            rating=row.rating,
+            mu=round(row.mu, 4),
+            sigma=round(row.sigma, 4),
+            games_played=row.games_played,
+            wins=row.wins,
+            losses=row.losses,
+        )
+        for row in leaderboard_service.leaderboard(db, season_id, min_games=min_games)
+    ]
+
+
+@router.get("/players/{player_id}", response_model=PlayerDetailOut)
+def get_player(player_id: int, db: Session = Depends(get_db)):
+    player = db.get(Player, player_id)
+    if player is None:
+        raise HTTPException(status_code=404, detail=f"player {player_id} does not exist")
+    return PlayerDetailOut(
+        player=PlayerOut.model_validate(player, from_attributes=True),
+        seasons=[
+            SeasonSummaryOut(
+                season=SeasonOut.model_validate(s.season, from_attributes=True),
+                rating=s.rating,
+                mu=round(s.mu, 4),
+                sigma=round(s.sigma, 4),
+                games_played=s.games_played,
+                wins=s.wins,
+                losses=s.losses,
+            )
+            for s in leaderboard_service.player_seasons(db, player_id)
+        ],
+        all_time=leaderboard_service.all_time_record(db, player_id),
+    )
+
+
+@router.get("/players/{player_id}/history", response_model=list[RatingPointOut])
+def get_player_history(
+    player_id: int, season_id: int | None = None, db: Session = Depends(get_db)
+):
+    if db.get(Player, player_id) is None:
+        raise HTTPException(status_code=404, detail=f"player {player_id} does not exist")
+    if season_id is None:
+        summaries = leaderboard_service.player_seasons(db, player_id)
+        if not summaries:
+            return []
+        season_id = summaries[0].season.id
+    from trueskill import Rating
+
+    return [
+        RatingPointOut(
+            game_id=row.game_id,
+            mu_before=round(row.mu_before, 4),
+            sigma_before=round(row.sigma_before, 4),
+            mu_after=round(row.mu_after, 4),
+            sigma_after=round(row.sigma_after, 4),
+            rating_after=display_rating(Rating(row.mu_after, row.sigma_after)),
+        )
+        for row in leaderboard_service.rating_history(db, player_id, season_id)
     ]
 
 
