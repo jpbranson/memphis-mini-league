@@ -620,3 +620,31 @@ def test_the_favicons_use_the_palette_the_pages_use():
 
     assert 'fill="#f4f1e8"' in light and "#14130f" in light
     assert 'fill="#14130f"' in dark and "#ece8dc" in dark
+
+
+def test_the_masthead_carries_the_mark(client):
+    body = squash(text(client.get("/")))
+    assert '<source srcset="/static/favicon-dark.svg" media="(prefers-color-scheme: dark)">' in body
+    assert '<img src="/static/favicon-light.svg" alt="" class="mark"' in body
+
+
+def test_the_mark_is_inside_the_link_home(client):
+    """Clicking the icon should go home, the same as clicking the wordmark."""
+    body = squash(text(client.get("/")))
+    start = body.index('<b><a href="/">')
+    end = body.index("</a></b>", start)
+    assert "favicon-light.svg" in body[start:end]
+    assert "Mini League" in body[start:end]
+
+
+def test_the_mark_is_decorative(client):
+    """Empty alt on purpose: the wordmark beside it already says the name."""
+    body = squash(text(client.get("/")))
+    assert 'class="mark"' in body
+    assert 'alt=""' in body
+
+
+def test_the_mark_is_sized_against_the_wordmark(client):
+    """In em, not px, so it follows the brand text rather than drifting from it."""
+    body = squash(text(client.get("/")))
+    assert "height: .9em; width: .9em;" in body
