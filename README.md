@@ -6,7 +6,7 @@ balanced team generation, and a leaderboard. See
 
 ## Status
 
-Milestones 1, 2, 3 and 4 are done.
+Milestones 1 to 5 are done.
 
 1. **Core**: data model, Alembic migrations, TrueSkill ratings, `recompute_ratings()`.
 2. **Organizer flow**: create a session, check players in with fuzzy search and
@@ -17,14 +17,13 @@ Milestones 1, 2, 3 and 4 are done.
 4. **Player management**: rename, retire and reinstate, merge duplicates with a
    confirmation that shows the consequences, an audit log, and undo.
 
-The session board also shows each player's rating, balances teams on request,
-and previews the matchup as players are moved. Team balancing was brought
-forward from milestone 5; the swap-and-regenerate refinements there are still
-open.
+5. **Team generation**: a format picker for team size and how many fit on the
+   field, balancing that benches whoever has played most, a one-for-one swap,
+   and a live predicted win percentage.
 
-Not built yet: the rest of team generation (milestone 5), the simulator
-(milestone 6), and the organizer password (milestone 7). Every page is currently
-unauthenticated, so do not put this on a public address yet.
+Not built yet: the simulator that tunes the rating parameters (milestone 6) and
+the organizer password (milestone 7). Every page is currently unauthenticated,
+so do not put this on a public address yet.
 
 ## Run the app
 
@@ -60,7 +59,7 @@ nothing to activate.
 uv run pytest
 ```
 
-308 tests, about 25 seconds. Coverage by file:
+338 tests, about 30 seconds. Coverage by file:
 
 | File | What it checks |
 |---|---|
@@ -79,6 +78,7 @@ uv run pytest
 | `tests/test_public_pages.py` | Leaderboard, player pages, the rating explanation, and the drawer |
 | `tests/test_merges.py` | Rename, retire, merge planning, merging, and undo |
 | `tests/test_admin_players.py` | Player management pages, the audit log, and its API |
+| `tests/test_bench_and_format.py` | Format picker, bench selection, and the swap control |
 
 Useful variants:
 
@@ -108,6 +108,18 @@ Two things worth looking for in the output. A player with one game sits below
 players with lower raw skill because the displayed rating subtracts three sigma.
 And the corrected game gets a new id, with the deleted one absent from the
 rating history.
+
+## Generate sample data
+
+```bash
+uv run python scripts/simulate.py --days 5 --min-games 2 --max-games 4
+```
+
+Adds realistic mornings to whatever database is configured. Turnout varies, at
+most five a side take the field with bigger rosters rotating substitutes, and
+games run to 5 at four a side or more and to 3 below that. Pass `--seed` for a
+repeatable run. This is sample data, not the parameter-tuning simulator from
+milestone 6.
 
 ## Migrations
 
@@ -154,3 +166,4 @@ uv run alembic revision --autogenerate -m "describe the change"
 - `src/mini_league/web/` - FastAPI app, JSON API, Jinja2 templates, vendored htmx and Chart.js
 - `alembic/` - migrations
 - `scripts/demo.py` - manual end-to-end smoke test
+- `scripts/simulate.py` - fills the database with plausible sessions

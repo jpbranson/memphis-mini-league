@@ -146,3 +146,73 @@ def test_get_session_unknown(db):
 def test_notes_are_optional_and_trimmed_to_none(db, season):
     assert create_session(db, date(2026, 9, 5)).notes is None
     assert create_session(db, date(2026, 9, 6), notes="Windy").notes == "Windy"
+
+
+def test_rounds_played_counts_each_players_games(db, league_session, make_players):
+    from mini_league.games import TeamInput, delete_game, record_game
+    from mini_league.sessions import rounds_played
+
+    a, b, c = make_players(3)
+    assert rounds_played(db, league_session.id) == {}
+
+    record_game(db, league_session.id, [TeamInput([a.id], 1), TeamInput([b.id], 2)])
+    game = record_game(db, league_session.id, [TeamInput([a.id], 1), TeamInput([c.id], 2)])
+    assert rounds_played(db, league_session.id) == {a.id: 2, b.id: 1, c.id: 1}
+
+    delete_game(db, game.id)
+    assert rounds_played(db, league_session.id) == {a.id: 1, b.id: 1}
+
+
+def test_move_session_to_another_season(db, season, league_session, make_players):
+    from datetime import date as date_type
+
+    from mini_league.games import TeamInput, record_game
+    from mini_league.models import PlayerSeasonRating, Season
+    from mini_league.sessions import move_session_to_season
+
+    a, b = make_players(2)
+    record_game(db, league_session.id, [TeamInput([a.id], 1), TeamInput([b.id], 2)])
+    assert db.get(PlayerSeasonRating, (a.id, season.id)).games_played == 1
+
+    winter = Season(name="Winter 2027", start_date=date_type(2027, 1, 1))
+    db.add(winter)
+    db.commit()
+
+    move_session_to_season(db, league_session.id, winter.id)
+    # Both seasons were replayed: the old one empties, the new one gains the game.
+    assert db.get(PlayerSeasonRating, (a.id, season.id)) is None
+    assert db.get(PlayerSeasonRating, (a.id, winter.id)).games_played == 1
+
+
+def test_move_session_writes_an_audit_entry(db, season, league_session):
+    from datetime import date as date_type
+
+    from sqlalchemy import select
+
+    from mini_league.models import AuditLog, Season
+    from mini_league.sessions import move_session_to_season
+
+    winter = Season(name="Winter 2027", start_date=date_type(2027, 1, 1))
+    db.add(winter)
+    db.commit()
+    move_session_to_season(db, league_session.id, winter.id)
+
+    entry = db.scalars(
+        select(AuditLog).where(AuditLog.action == "move_session_season")
+    ).one()
+    assert entry.payload == {
+        "session_id": league_session.id,
+        "before": season.id,
+        "after": winter.id,
+    }
+
+
+def test_move_session_validation(db, season, league_session):
+    from mini_league.sessions import move_session_to_season
+
+    with pytest.raises(LookupError, match="season 999"):
+        move_session_to_season(db, league_session.id, 999)
+    with pytest.raises(LookupError, match="session 999"):
+        move_session_to_season(db, 999, season.id)
+    # Moving to the season it is already in is a no-op, not an error.
+    assert move_session_to_season(db, league_session.id, season.id).season_id == season.id

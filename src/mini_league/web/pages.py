@@ -36,6 +36,8 @@ from .deps import get_db, templates
 router = APIRouter()
 
 DEFAULT_MIN_GAMES = 5
+# At most five a side on the field; bigger rosters rotate substitutes.
+DEFAULT_MAX_ON_FIELD = 5
 
 
 # --- shared helpers -------------------------------------------------------------
@@ -174,6 +176,16 @@ def board_context(
         "rating_of": rating_lookup(db, session.season_id),
         "assignment": assignment,
         "matchup": matchup(db, session, assignment),
+        "team_size": "",
+        "max_on_field": str(DEFAULT_MAX_ON_FIELD),
+        "benched": (
+            [sp for sp in present if sp.player_id not in assignment] if assignment else []
+        ),
+        "bench_auto": False,
+        "team_a": [sp for sp in present if assignment.get(sp.player_id) == 0],
+        "team_b": [sp for sp in present if assignment.get(sp.player_id) == 1],
+        "has_teams": bool(assignment),
+        "rounds_played": sessions_service.rounds_played(db, session.id),
         "error": error,
         "notice": notice,
         "duplicate_name": duplicate_name,
@@ -490,60 +502,172 @@ def add_player(
 # --- team balancing --------------------------------------------------------------
 
 
-def render_record_card(
-    request: Request,
+def record_card_context(
     db: Session,
     session: LeagueSession,
     assignment: dict[int, int],
     *,
     notice: str | None = None,
+    team_size: str = "",
+    max_on_field: str = str(DEFAULT_MAX_ON_FIELD),
+    benched: list[int] | None = None,
+) -> dict:
+    present = [
+        sp
+        for sp in sessions_service.session_roster(db, session.id)
+        if sp.checked_out_at is None
+    ]
+    # Derived rather than passed in, so the list stays right after a swap or a
+    # manual move, not just immediately after balancing.
+    sitting_out = (
+        [sp for sp in present if sp.player_id not in assignment] if assignment else []
+    )
+    return {
+        "session": session,
+        "present": present,
+        "assignment": assignment,
+        "matchup": matchup(db, session, assignment),
+        "rating_of": rating_lookup(db, session.season_id),
+        "balance_notice": notice,
+        "team_size": team_size,
+        "max_on_field": max_on_field,
+        "benched": sitting_out,
+        "bench_auto": bool(benched),
+        "team_a": [sp for sp in present if assignment.get(sp.player_id) == 0],
+        "team_b": [sp for sp in present if assignment.get(sp.player_id) == 1],
+        "has_teams": bool(assignment),
+        "rounds_played": sessions_service.rounds_played(db, session.id),
+    }
+
+
+def render_record_card(
+    request: Request,
+    db: Session,
+    session: LeagueSession,
+    assignment: dict[int, int],
+    **kwargs,
 ) -> HTMLResponse:
     return templates.TemplateResponse(
         request,
         "partials/record_form.html",
-        {
-            "session": session,
-            "present": [
-                sp
-                for sp in sessions_service.session_roster(db, session.id)
-                if sp.checked_out_at is None
-            ],
-            "assignment": assignment,
-            "matchup": matchup(db, session, assignment),
-            "rating_of": rating_lookup(db, session.season_id),
-            "balance_notice": notice,
-        },
+        record_card_context(db, session, assignment, **kwargs),
     )
+
+
+def parse_optional_int(raw: str | None) -> int | None:
+    """Blank or "auto" means no preference."""
+    raw = (raw or "").strip()
+    if not raw or raw.lower() == "auto":
+        return None
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{raw!r} is not a number") from exc
 
 
 @router.post("/admin/session/{session_id}/balance", response_class=HTMLResponse)
-def balance_teams(request: Request, session_id: int, db: Session = Depends(get_db)):
+async def balance_teams(request: Request, session_id: int, db: Session = Depends(get_db)):
     """Split the checked-in players into two balanced teams (design doc section 5).
 
-    Chosen at random from the closest few splits, and biased against repeating
-    this session's pairings, so the same group does not get the same teams
-    every round. The organizer can still move anyone by hand afterwards.
+    Chosen at random from the closest few splits and biased against repeating
+    this session's pairings, so the same group does not get the same teams every
+    round. When a team size is set and more players are here than fit, whoever
+    has played the most rounds today sits out. The organizer can still move
+    anyone by hand afterwards.
     """
     session = load_session(db, session_id)
+    form = await request.form()
+    team_size_raw = form.get("team_size", "")
+    on_field_raw = form.get("max_on_field", str(DEFAULT_MAX_ON_FIELD))
+
     present = sessions_service.checked_in_players(db, session_id)
     if len(present) < 2:
         return render_record_card(
-            request, db, session, {}, notice="Check in at least two players first."
+            request,
+            db,
+            session,
+            {},
+            notice="Check in at least two players first.",
+            team_size=team_size_raw,
+            max_on_field=on_field_raw,
         )
 
-    player_ids = [p.id for p in present]
-    ratings = leaderboard_service.current_ratings(db, session.season_id, player_ids)
-    split = teams_service.generate_teams(
-        player_ids,
-        ratings,
-        history=session_history(db, session_id),
-        team_config=TeamGenConfig(),
-        rng=random.Random(),
-    )
+    try:
+        team_size = parse_optional_int(team_size_raw)
+        max_on_field = parse_optional_int(on_field_raw)
+        player_ids = [p.id for p in present]
+        playing_count = teams_service.playing_count_for(
+            len(player_ids), team_size, max_on_field
+        )
+        playing, benched = teams_service.select_bench(
+            player_ids,
+            playing_count,
+            sessions_service.rounds_played(db, session_id),
+            random.Random(),
+        )
+        split = teams_service.generate_teams(
+            playing,
+            leaderboard_service.current_ratings(db, session.season_id, playing),
+            history=session_history(db, session_id),
+            team_config=TeamGenConfig(),
+            rng=random.Random(),
+        )
+    except ValueError as exc:
+        return render_record_card(
+            request,
+            db,
+            session,
+            {},
+            notice=str(exc),
+            team_size=team_size_raw,
+            max_on_field=on_field_raw,
+        )
+
     assignment = {
         pid: index for index, roster in enumerate(split.teams) for pid in roster
     }
-    return render_record_card(request, db, session, assignment)
+    return render_record_card(
+        request,
+        db,
+        session,
+        assignment,
+        team_size=team_size_raw,
+        max_on_field=on_field_raw,
+        benched=benched,
+    )
+
+
+@router.post("/admin/session/{session_id}/swap", response_class=HTMLResponse)
+async def swap_players(request: Request, session_id: int, db: Session = Depends(get_db)):
+    """Exchange one player from each team and show the new prediction."""
+    session = load_session(db, session_id)
+    form = await request.form()
+    assignment = parse_assignments(form)
+    team_size_raw = form.get("team_size", "")
+    on_field_raw = form.get("max_on_field", str(DEFAULT_MAX_ON_FIELD))
+
+    def rerender(notice=None):
+        return render_record_card(
+            request,
+            db,
+            session,
+            assignment,
+            notice=notice,
+            team_size=team_size_raw,
+            max_on_field=on_field_raw,
+        )
+
+    try:
+        first = int(form.get("swap_a") or 0)
+        second = int(form.get("swap_b") or 0)
+    except ValueError:
+        return rerender("Pick one player from each team to swap.")
+
+    if assignment.get(first) != 0 or assignment.get(second) != 1:
+        return rerender("Pick one player from Team A and one from Team B.")
+
+    assignment[first], assignment[second] = 1, 0
+    return rerender()
 
 
 @router.post("/admin/session/{session_id}/preview", response_class=HTMLResponse)

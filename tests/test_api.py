@@ -290,3 +290,32 @@ def test_player_endpoints_404_for_unknown_player(client):
 def test_player_history_is_empty_for_an_unplayed_player(client, api_season, make_api_players):
     (ada,) = make_api_players("Ada")
     assert client.get(f"/api/players/{ada}/history").json() == []
+
+
+def test_api_move_session_between_seasons(client, api_session, make_api_players):
+    ada, ben = make_api_players("Ada", "Ben")
+    play_api(client, api_session, [ada], [ben])
+    assert client.get("/api/leaderboard").json()[0]["games_played"] == 1
+
+    winter = client.post(
+        "/api/seasons", json={"name": "Winter 2027", "start_date": "2027-01-01"}
+    ).json()
+
+    r = client.patch(f"/api/sessions/{api_session}", json={"season_id": winter["id"]})
+    assert r.status_code == 200
+    assert r.json()["season_id"] == winter["id"]
+
+    # The game now counts in the new season and no longer in the old one.
+    assert client.get("/api/leaderboard", params={"season_id": winter["id"]}).json()[0][
+        "games_played"
+    ] == 1
+    assert client.get("/api/leaderboard", params={"season_id": 1}).json() == []
+
+
+def test_api_move_session_validation(client, api_session):
+    assert client.patch(f"/api/sessions/{api_session}", json={}).status_code == 400
+    assert (
+        client.patch(f"/api/sessions/{api_session}", json={"season_id": 999}).status_code
+        == 404
+    )
+    assert client.patch("/api/sessions/999", json={"season_id": 1}).status_code == 404

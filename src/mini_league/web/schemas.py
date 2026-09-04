@@ -52,6 +52,10 @@ class SessionCreate(BaseModel):
     notes: str | None = None
 
 
+class SessionUpdate(BaseModel):
+    season_id: int | None = None
+
+
 class SessionPlayerOut(ORMModel):
     player: PlayerOut
     checked_in_at: dt.datetime

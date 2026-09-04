@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date as date_type
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from .models import LeagueSession, Player, SessionPlayer, utcnow
@@ -99,3 +99,51 @@ def session_roster(db: Session, session_id: int) -> list[SessionPlayer]:
 def checked_in_players(db: Session, session_id: int) -> list[Player]:
     """Players currently present, ordered by name."""
     return [sp.player for sp in session_roster(db, session_id) if sp.checked_out_at is None]
+
+
+def rounds_played(db: Session, session_id: int) -> dict[int, int]:
+    """How many rounds each player has already played in this session."""
+    from .models import Game, GameTeam, GameTeamPlayer
+
+    rows = db.execute(
+        select(GameTeamPlayer.player_id, func.count())
+        .join(GameTeam, GameTeam.id == GameTeamPlayer.game_team_id)
+        .join(Game, Game.id == GameTeam.game_id)
+        .where(Game.session_id == session_id, Game.deleted_at.is_(None))
+        .group_by(GameTeamPlayer.player_id)
+    ).all()
+    return {player_id: count for player_id, count in rows}
+
+
+def move_session_to_season(
+    db: Session, session_id: int, season_id: int, *, commit: bool = True
+) -> LeagueSession:
+    """Move a session between seasons and replay both (design doc section 6.1).
+
+    Rare, but a session created on the wrong side of a season boundary would
+    otherwise be stuck in the wrong standings.
+    """
+    from .audit import log_action
+    from .models import Season
+    from .recompute import recompute_ratings
+
+    session = get_session(db, session_id)
+    if db.get(Season, season_id) is None:
+        raise LookupError(f"season {season_id} does not exist")
+
+    previous = session.season_id
+    if previous == season_id:
+        return session
+
+    session.season_id = season_id
+    db.flush()
+    log_action(
+        db,
+        "move_session_season",
+        {"session_id": session_id, "before": previous, "after": season_id},
+    )
+    for affected in (previous, season_id):
+        recompute_ratings(db, affected, commit=False)
+    if commit:
+        db.commit()
+    return session

@@ -40,6 +40,7 @@ from .schemas import (
     SeasonSummaryOut,
     SessionCreate,
     SessionOut,
+    SessionUpdate,
     TeamOut,
 )
 
@@ -294,6 +295,18 @@ def create_session(payload: SessionCreate, db: Session = Depends(get_db)):
 def get_session(session_id: int, db: Session = Depends(get_db)):
     try:
         session = sessions_service.get_session(db, session_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return session_out(db, session)
+
+
+@router.patch("/sessions/{session_id}", response_model=SessionOut)
+def move_session(session_id: int, payload: SessionUpdate, db: Session = Depends(get_db)):
+    """Move a session to another season, replaying both (design doc section 6.1)."""
+    if payload.season_id is None:
+        raise HTTPException(status_code=400, detail="nothing to update")
+    try:
+        session = sessions_service.move_session_to_season(db, session_id, payload.season_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return session_out(db, session)

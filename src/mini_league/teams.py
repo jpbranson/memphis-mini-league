@@ -241,3 +241,57 @@ def describe_matchup(
         "players_on_field": on_field,
         "verdict": verdict,
     }
+
+
+def select_bench(
+    player_ids: Sequence[int],
+    playing_count: int,
+    rounds_played: Mapping[int, int] | None = None,
+    rng: random.Random | None = None,
+) -> tuple[list[int], list[int]]:
+    """Split the checked-in players into who plays and who sits (design doc 5.3).
+
+    Whoever has played the most rounds today sits first, so time on the field
+    evens out over a morning. Ties are broken at random rather than by id, or
+    the same people would always be the ones to miss out.
+    """
+    rng = rng or random.Random()
+    players = list(player_ids)
+    if playing_count >= len(players):
+        return players, []
+    if playing_count < 2:
+        raise ValueError("at least two players have to play")
+
+    counts = rounds_played or {}
+    order = sorted(players, key=lambda pid: (-counts.get(pid, 0), rng.random()))
+    benched = order[: len(players) - playing_count]
+    playing = [pid for pid in players if pid not in set(benched)]
+    return playing, benched
+
+
+def playing_count_for(
+    attending: int, team_size: int | None, max_on_field: int | None = None
+) -> int:
+    """How many players take the field, given the requested format.
+
+    `team_size` is the roster per team; None means everybody plays and the
+    teams are split as evenly as possible. `max_on_field` does not reduce this:
+    a roster larger than it means substitutes rotating, not players sent home.
+    """
+    if attending < 2:
+        raise ValueError("at least two players have to play")
+    if team_size is None:
+        return attending
+    if team_size < 1:
+        raise ValueError("team size must be at least 1")
+    return min(attending, team_size * 2)
+
+
+def on_field_for(team_sizes: Sequence[int], max_on_field: int | None) -> int:
+    """Players per team actually on the field: the smaller roster, capped."""
+    smallest = min(team_sizes)
+    if max_on_field is None:
+        return smallest
+    if max_on_field < 1:
+        raise ValueError("max on the field must be at least 1")
+    return min(smallest, max_on_field)
