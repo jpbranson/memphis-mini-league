@@ -1,0 +1,34 @@
+{# The standing designation, set from the player's own page.
+
+   This is the default every future session starts from, which is what makes it
+   different from the picker on the check-in list: that one overrides the day
+   and leaves this alone. Saying so on screen matters, because the two controls
+   look alike and only one of them is remembered.
+
+   Nothing renders for a visitor. The organizer's picker already shows the
+   current value as the checked option, so the tag beside the name is only
+   drawn when there is no picker to read it off. #}
+{% if request.state.is_organizer %}
+  {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+  {% if notice %}<div class="flash ok">{{ notice }}</div>{% endif %}
+  <div class="row" style="gap:10px; margin:2px 0 16px; flex-wrap:wrap">
+    <span class="seg tight">
+      {% for name in designation_names %}
+        <label><input type="radio" name="standing_designation" value="{{ name }}"
+               {% if player.designation == name %}checked{% endif %}
+               hx-post="/admin/players/{{ player.id }}/designation"
+               hx-vals='{"designation": "{{ name }}", "view": "player"}'
+               hx-target="#player-designation"><span>{{ name }}</span></label>
+      {% endfor %}
+      <label><input type="radio" name="standing_designation" value=""
+             {% if not player.designation %}checked{% endif %}
+             hx-post="/admin/players/{{ player.id }}/designation"
+             hx-vals='{"designation": "", "view": "player"}'
+             hx-target="#player-designation"><span>&mdash;</span></label>
+    </span>
+    <span class="muted small">
+      Matches up as, from every session on. Changing it on the check-in list
+      instead lasts that morning only.
+    </span>
+  </div>
+{% endif %}

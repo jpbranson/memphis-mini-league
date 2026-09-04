@@ -350,3 +350,132 @@ def test_the_explanation_sits_between_the_chart_and_the_games(
         < body.index("What the numbers actually mean")
         < body.index("<h2>Games</h2>")
     )
+
+
+# --- the standing designation, set from the player's own page --------------------
+
+
+def today_says(client, session_id, player_id):
+    """What a checked-in player counts as for one session."""
+    roster = client.get(f"/api/sessions/{session_id}").json()["players"]
+    return [e["designation"] for e in roster if e["player"]["id"] == player_id]
+
+
+def standing(client, player_id):
+    """The player's standing designation, straight from the API."""
+    return client.get(f"/api/players/{player_id}").json()["player"]["designation"]
+
+
+def make_player(client, name, designation=None):
+    response = client.post(
+        "/api/players", json={"name": name, "designation": designation, "force": True}
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["id"]
+
+
+def test_player_page_picker_starts_on_what_the_player_was_created_with(client):
+    ada = make_player(client, "Ada", "WMP")
+    body = squash(text(client.get(f"/players/{ada}")))
+    assert f'hx-post="/admin/players/{ada}/designation"' in body
+    assert '<input type="radio" name="standing_designation" value="WMP" checked' in body
+    assert '<input type="radio" name="standing_designation" value="MMP" checked' not in body
+
+
+def test_a_player_created_without_one_starts_on_the_blank_option(client):
+    ada = make_player(client, "Ada")
+    body = squash(text(client.get(f"/players/{ada}")))
+    assert '<input type="radio" name="standing_designation" value="" checked' in body
+
+
+def test_a_visitor_sees_the_designation_but_cannot_change_it(client, visitor):
+    ada = make_player(client, "Ada", "WMP")
+    body = squash(text(visitor.get(f"/players/{ada}")))
+    assert '<span class="tag">WMP</span>' in body
+    assert "standing_designation" not in body
+
+
+def test_changing_it_on_the_player_page_returns_only_that_block(client):
+    ada = make_player(client, "Ada", "WMP")
+    response = client.post(
+        f"/admin/players/{ada}/designation", data={"designation": "MMP", "view": "player"}
+    )
+    assert response.status_code == 200
+    body = squash(text(response))
+    assert "Ada is now MMP." in body
+    assert '<input type="radio" name="standing_designation" value="MMP" checked' in body
+    # The block, not the whole page, so it can be swapped in place.
+    assert "<h1>" not in body
+
+
+def test_the_player_page_change_becomes_the_new_default(client, api_season):
+    ada = make_player(client, "Ada", "WMP")
+    client.post(
+        f"/admin/players/{ada}/designation", data={"designation": "MMP", "view": "player"}
+    )
+
+    assert standing(client, ada) == "MMP"
+    # A session started afterwards picks the new default up on its own.
+    session_id = int(
+        client.post(
+            "/admin/session/new", data={"date": "2026-09-05"}, follow_redirects=False
+        ).headers["location"].rsplit("/", 1)[1]
+    )
+    client.post(f"/admin/session/{session_id}/checkin", data={"player_id": ada})
+    assert today_says(client, session_id, ada) == ["MMP"]
+
+
+def test_a_session_override_still_lasts_only_that_session(client, page_session):
+    """The two pickers look alike, so this is the difference worth pinning down."""
+    ada = make_player(client, "Ada", "WMP")
+    client.post(f"/admin/session/{page_session}/checkin", data={"player_id": ada})
+    client.post(
+        f"/admin/session/{page_session}/designation",
+        data={"player_id": ada, "designation": "MMP"},
+    )
+
+    # Today says MMP, but the player is still standing as a WMP...
+    assert today_says(client, page_session, ada) == ["MMP"]
+    assert standing(client, ada) == "WMP"
+
+    # ...so the picker on their page still reads WMP, and the next session does too.
+    body = squash(text(client.get(f"/players/{ada}")))
+    assert '<input type="radio" name="standing_designation" value="WMP" checked' in body
+    later = int(
+        client.post(
+            "/admin/session/new", data={"date": "2026-09-12"}, follow_redirects=False
+        ).headers["location"].rsplit("/", 1)[1]
+    )
+    client.post(f"/admin/session/{later}/checkin", data={"player_id": ada})
+    assert today_says(client, later, ada) == ["WMP"]
+
+
+def test_the_player_page_can_clear_the_designation(client):
+    ada = make_player(client, "Ada", "WMP")
+    body = squash(text(client.post(
+        f"/admin/players/{ada}/designation", data={"designation": "", "view": "player"}
+    )))
+    assert "Ada has no designation." in body
+    assert standing(client, ada) is None
+
+
+def test_a_bad_designation_leaves_the_player_page_block_unchanged(client):
+    ada = make_player(client, "Ada", "WMP")
+    response = client.post(
+        f"/admin/players/{ada}/designation", data={"designation": "WNP", "view": "player"}
+    )
+    assert response.status_code == 400
+    body = squash(text(response))
+    assert "not a designation" in body
+    assert '<input type="radio" name="standing_designation" value="WMP" checked' in body
+    assert standing(client, ada) == "WMP"
+
+
+def test_a_visitor_cannot_post_a_designation(visitor):
+    response = visitor.post(
+        "/admin/players/1/designation",
+        data={"designation": "WMP", "view": "player"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/login")

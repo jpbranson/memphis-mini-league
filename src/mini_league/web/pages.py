@@ -405,6 +405,7 @@ def player_page(
             ),
             "all_time": leaderboard_service.all_time_record(db, player_id),
             "config": DEFAULT_RATING_CONFIG,
+            "designation_names": list(designations_service.DESIGNATIONS),
         },
     )
 
@@ -1099,31 +1100,72 @@ def rename_player(
     return render_players(request, db, query=q, notice=f"Renamed to {player.name}.")
 
 
+def render_player_designation(
+    request: Request,
+    player: Player,
+    *,
+    error: str | None = None,
+    notice: str | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
+    """Just the designation block from a player's page, for swapping in place."""
+    return templates.TemplateResponse(
+        request,
+        "partials/player_designation.html",
+        {
+            "player": player,
+            "designation_names": list(designations_service.DESIGNATIONS),
+            "error": error,
+            "notice": notice,
+        },
+        status_code=status_code,
+    )
+
+
+def designation_notice(player: Player) -> str:
+    return (
+        f"{player.name} is now {player.designation}."
+        if player.designation
+        else f"{player.name} has no designation."
+    )
+
+
 @router.post("/admin/players/{player_id}/designation", response_class=HTMLResponse)
 def set_player_designation(
     request: Request,
     player_id: int,
     designation: str = Form(default=""),
     q: str = Form(default=""),
+    view: str = Form(default="list"),
     db: Session = Depends(get_db),
 ):
-    """Set or clear a player's standing designation. Blank clears it."""
+    """Set or clear a player's standing designation. Blank clears it.
+
+    Standing is the whole point: this is the designation every future session
+    starts from, where the picker on the check-in list changes one morning and
+    leaves this alone. The same change is offered from two screens, so `view`
+    says which of them to send back.
+    """
+    player = db.get(Player, player_id)
+    if player is None:
+        raise HTTPException(status_code=404, detail=f"player {player_id} does not exist")
+
     try:
-        player = players_service.set_designation(db, player_id, designation)
+        players_service.set_designation(db, player_id, designation)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
+        if view == "player":
+            return render_player_designation(
+                request, player, error=str(exc), status_code=400
+            )
         return render_players(request, db, query=q, error=str(exc), status_code=400)
-    return render_players(
-        request,
-        db,
-        query=q,
-        notice=(
-            f"{player.name} is now {player.designation}."
-            if player.designation
-            else f"{player.name} has no designation."
-        ),
-    )
+
+    if view == "player":
+        return render_player_designation(
+            request, player, notice=designation_notice(player)
+        )
+    return render_players(request, db, query=q, notice=designation_notice(player))
 
 
 @router.post("/admin/players/{player_id}/active", response_class=HTMLResponse)
