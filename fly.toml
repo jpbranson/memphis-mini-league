@@ -8,6 +8,10 @@ primary_region = "ord"
 
 [env]
   MINI_LEAGUE_DATABASE_URL = "sqlite:////data/mini_league.db"
+  # Google Analytics. Not a secret: a measurement id is in the page source of
+  # every site that uses one, so it lives here rather than in fly secrets,
+  # where it would be invisible and would not survive recreating the app.
+  MINI_LEAGUE_GA_MEASUREMENT_ID = "G-M0836W3ZFE"
 
 # SQLite is a single file, so exactly one machine may run at a time. Two would
 # race each other and lose results.
