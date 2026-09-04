@@ -13,6 +13,36 @@
       media="(prefers-color-scheme: light)">
 <link rel="icon" type="image/svg+xml" href="/static/favicon-dark.svg"
       media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+
+{# What iMessage, Slack and the rest read when a link is unfurled.
+
+   Two things they are strict about. The image has to be a bitmap - Apple's
+   link presentation will not render an SVG, which is all the icons above are -
+   and every URL has to be absolute, which is why these are built off the
+   request rather than written as /static paths like everything else on the
+   page.
+
+   Pages override `description` to say something about themselves; the default
+   describes the app, which is the right answer for the screens nobody shares. #}
+<meta property="og:site_name" content="Mini League">
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{ self.title() }}">
+<meta property="og:description" content="{% block description %}An ultimate frisbee mini-league: TrueSkill ratings, balanced teams, and a season leaderboard.{% endblock %}">
+{# Path only, never the query. A canonical url should not vary with whatever
+   was appended to it, and reflecting the raw url back would put an attacker's
+   ?next= into the metadata a scraper treats as this page's real address - the
+   same echo `safe_next` refuses to make in the sign-in form. #}
+<meta property="og:url" content="{{ request.url.replace(query='') }}">
+<meta property="og:image" content="{{ request.url_for('static', path='og-image.png') }}">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Mini League">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="description" content="{{ self.description() }}">
+<meta name="theme-color" content="#f4f1e8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14130f" media="(prefers-color-scheme: dark)">
 <script src="/static/htmx.min.js"></script>
 {% set ga_id = request.app.state.ga_measurement_id %}
 {% if ga_id %}

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ player.name }} — Mini League{% endblock %}
+{% block description %}{% if current %}{{ player.name }}: {{ current.rating }} rating, {{ current.wins }}-{{ current.losses }} over {{ current.games_played }} game{{ "" if current.games_played == 1 else "s" }} in {{ current.season.name }}.{% else %}{{ player.name }} has not played a game yet.{% endif %}{% endblock %}
 {% block body %}
 <h1>{{ player.name }}</h1>
 <p class="sub">

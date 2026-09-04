@@ -200,3 +200,4 @@ uv run alembic revision --autogenerate -m "describe the change"
 - `scripts/demo.py` - manual end-to-end smoke test
 - `scripts/simulate.py` - fills the database with plausible sessions
 - `scripts/validate_ratings.py` - checks and tunes the rating system
+- `scripts/make_share_images.py` - redraws the link-preview PNGs from the palette

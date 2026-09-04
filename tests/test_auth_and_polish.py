@@ -648,3 +648,84 @@ def test_the_mark_is_sized_against_the_wordmark(client):
     """In em, not px, so it follows the brand text rather than drifting from it."""
     body = squash(text(client.get("/")))
     assert "height: .9em; width: .9em;" in body
+
+
+# --- link previews ---------------------------------------------------------------
+
+
+def png_size(data: bytes) -> tuple[int, int]:
+    """Width and height out of a PNG's IHDR, without needing an image library."""
+    import struct
+
+    assert data[:8] == b"\x89PNG\r\n\x1a\n", "not a PNG"
+    return struct.unpack(">II", data[16:24])
+
+
+def test_the_leaderboard_carries_preview_metadata(client, api_season):
+    body = squash(text(client.get("/")))
+    assert '<meta property="og:site_name" content="Mini League">' in body
+    assert '<meta property="og:title" content="Mini League">' in body
+    assert '<meta name="twitter:card" content="summary_large_image">' in body
+    assert "TrueSkill ratings" in body
+
+
+def test_the_preview_image_url_is_absolute(client, api_season):
+    """A relative og:image is the usual reason a link unfurls blank."""
+    body = squash(text(client.get("/")))
+    assert '<meta property="og:image" content="http://testserver/static/og-image.png">' in body
+    assert '<meta property="og:url" content="http://testserver/">' in body
+
+
+def test_a_player_page_describes_that_player(client, page_session, make_api_players):
+    ada, ben = make_api_players("Ada", "Ben")
+    check_in_all(client, page_session, [ada, ben])
+    play_round(client, page_session, [ada], [ben])
+
+    body = squash(text(client.get(f"/players/{ada}")))
+    assert '<meta property="og:title" content="Ada — Mini League">' in body
+    assert 'content="Ada: ' in body
+    assert "1-0 over 1 game in Fall 2026." in body
+
+
+def test_a_player_with_no_games_still_describes_itself(client, api_season, make_api_players):
+    (ada,) = make_api_players("Ada")
+    body = squash(text(client.get(f"/players/{ada}")))
+    assert "Ada has not played a game yet." in body
+
+
+def test_the_preview_images_are_served_as_png(client):
+    for name in ("og-image.png", "apple-touch-icon.png"):
+        response = client.get(f"/static/{name}")
+        assert response.status_code == 200, name
+        assert response.headers["content-type"] == "image/png", name
+
+
+def test_the_card_is_the_size_the_metadata_claims(client, api_season):
+    """If the card is ever redrawn at another size, the tags must move with it.
+
+    Apple and Slack both lay the preview out from these numbers before the
+    image arrives, so a card that disagrees with them is cropped or letterboxed.
+    """
+    body = squash(text(client.get("/")))
+    width, height = png_size(client.get("/static/og-image.png").content)
+    assert f'<meta property="og:image:width" content="{width}">' in body
+    assert f'<meta property="og:image:height" content="{height}">' in body
+    assert (width, height) == (1200, 630)
+
+
+def test_the_apple_touch_icon_is_declared_and_square(client):
+    body = squash(text(client.get("/")))
+    assert '<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">' in body
+    width, height = png_size(client.get("/static/apple-touch-icon.png").content)
+    assert width == height == 180
+
+
+def test_the_canonical_url_drops_the_query(visitor):
+    """og:url is what a scraper takes as this page's real address.
+
+    Reflecting the raw url would put a crafted ?next= into it, which is the
+    same echo the sign-in form refuses to make.
+    """
+    body = visitor.get("/login", params={"next": "//example.com"}).text
+    assert '<meta property="og:url" content="http://testserver/login">' in body
+    assert "example.com" not in body
