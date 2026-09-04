@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Mini League{% endblock %}</title>
+{# Two icons for the two palettes, the same warm paper and ink the pages use.
+   Light is declared first on purpose: a browser that ignores `media` on an
+   icon link takes the first one it is given, and the light icon is the safer
+   thing to be stuck with, since it carries its own background rather than
+   relying on the tab strip behind it. #}
+<link rel="icon" type="image/svg+xml" href="/static/favicon-light.svg"
+      media="(prefers-color-scheme: light)">
+<link rel="icon" type="image/svg+xml" href="/static/favicon-dark.svg"
+      media="(prefers-color-scheme: dark)">
 <script src="/static/htmx.min.js"></script>
 {% set ga_id = request.app.state.ga_measurement_id %}
 {% if ga_id %}

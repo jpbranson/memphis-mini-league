@@ -571,3 +571,52 @@ def test_the_environment_turns_analytics_on(monkeypatch):
 
     monkeypatch.setenv("MINI_LEAGUE_GA_MEASUREMENT_ID", "")
     assert get_settings().ga_measurement_id is None
+
+
+# --- favicons --------------------------------------------------------------------
+
+
+def test_both_favicons_are_declared(client):
+    body = squash(text(client.get("/")))
+    assert (
+        '<link rel="icon" type="image/svg+xml" href="/static/favicon-light.svg" '
+        'media="(prefers-color-scheme: light)">' in body
+    )
+    assert (
+        '<link rel="icon" type="image/svg+xml" href="/static/favicon-dark.svg" '
+        'media="(prefers-color-scheme: dark)">' in body
+    )
+
+
+def test_the_light_favicon_is_declared_first(client):
+    """A browser that ignores `media` on an icon link takes the first one."""
+    body = text(client.get("/"))
+    assert body.index("favicon-light.svg") < body.index("favicon-dark.svg")
+
+
+def test_the_favicons_are_served(client):
+    for name in ("favicon-light.svg", "favicon-dark.svg"):
+        response = client.get(f"/static/{name}")
+        assert response.status_code == 200, name
+        assert response.headers["content-type"].startswith("image/svg+xml")
+
+
+def test_the_favicons_use_the_palette_the_pages_use():
+    """If the palette moves, the icons have to move with it.
+
+    They carry their own background rather than sitting on the tab strip, so a
+    changed --paper leaves them looking like someone else's icon until this is
+    noticed. Cheaper to fail here than to spot it in a tab.
+    """
+    from mini_league.web.deps import STATIC_DIR, TEMPLATES_DIR
+
+    css = (TEMPLATES_DIR / "base.html").read_text()
+    light = (STATIC_DIR / "favicon-light.svg").read_text()
+    dark = (STATIC_DIR / "favicon-dark.svg").read_text()
+
+    # Light mode: paper #f4f1e8, ink #14130f. Dark mode swaps to #14130f/#ece8dc.
+    assert "--paper:  #f4f1e8;" in css and "--ink:    #14130f;" in css
+    assert "--paper:  #14130f;" in css and "--ink:    #ece8dc;" in css
+
+    assert 'fill="#f4f1e8"' in light and "#14130f" in light
+    assert 'fill="#14130f"' in dark and "#ece8dc" in dark
