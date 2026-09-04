@@ -1,0 +1,29 @@
+[project]
+name = "mini-league"
+version = "0.1.0"
+description = "Ultimate frisbee mini-league: TrueSkill ratings, balanced team generation, leaderboard."
+authors = [
+    { name = "jpbranson", email = "jpbranson@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.19.1",
+    "sqlalchemy>=2.0.52",
+    "trueskill>=0.4.5",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.0,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+    # upstream: trueskill 0.4.5 has an unescaped backslash in an ASCII-art docstring
+    "ignore:invalid escape sequence:SyntaxWarning",
+]
