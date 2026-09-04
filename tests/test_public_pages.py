@@ -38,7 +38,7 @@ def test_leaderboard_lists_players_in_rank_order(client, page_session, make_api_
     play_round(client, page_session, [ada, ben], [cleo, dev], score=(5, 1))
 
     body = text(client.get("/?min_games=0"))
-    assert "Leaderboard" in body
+    assert "Fall 2026" in body
     assert "Fall 2026" in body
     for name in ("Ada", "Ben", "Cleo", "Dev"):
         assert name in body
@@ -55,15 +55,18 @@ def test_leaderboard_hides_players_below_the_games_threshold(
     play_round(client, page_session, [ada], [ben])
 
     body = text(client.get("/"))  # default minimum is 5 games
-    assert "hidden with fewer than 5 games" in squash(body)
+    assert "Nobody has 5 games yet" in squash(body)
     assert text(client.get("/?min_games=1")).count('href="/players/') == 2
 
 
-def test_leaderboard_season_selector_lists_seasons(client, api_season):
+def test_leaderboard_season_selector_appears_only_with_more_than_one(client, api_season):
+    """With a single season there is nothing to choose between, so no picker."""
+    assert 'name="season_id"' not in text(client.get("/"))
+
+    client.post("/admin/seasons", data={"name": "Spring 2027", "start_date": "2027-03-01"})
     body = text(client.get("/"))
     assert 'name="season_id"' in body
-    assert "Fall 2026" in body
-    assert "(current)" in body
+    assert "Fall 2026" in body and "Spring 2027" in body
 
 
 def test_leaderboard_with_no_seasons(client):
@@ -71,7 +74,7 @@ def test_leaderboard_with_no_seasons(client):
 
 
 def test_leaderboard_explains_the_rating(client, api_season):
-    assert "conservative estimate" in text(client.get("/"))
+    assert "skill minus three times the uncertainty" in text(client.get("/"))
 
 
 # --- player page -----------------------------------------------------------------
@@ -84,19 +87,17 @@ def test_player_page_shows_record_and_games(client, page_session, make_api_playe
 
     body = squash(text(client.get(f"/players/{ada}")))
     assert "Ada" in body
-    assert "All time 1-0" in body
-    assert "1 season" in body
-    assert "Won" in body and "5-3" in body
-    assert "With Ben" in body
+    assert "1&ndash;0 all time" in body
+    assert "Won" in body and "5&ndash;3" in body
+    assert "with Ben" in body
     assert "against Cleo, Dev" in body or "against Dev, Cleo" in body
-    assert "Skill estimate (mu)" in body
-    assert "Uncertainty (sigma)" in body
+    assert "skill" in body and "uncertainty" in body
 
 
 def test_player_page_without_games(client, api_season, make_api_players):
     (ada,) = make_api_players("Ada")
     body = text(client.get(f"/players/{ada}"))
-    assert "No games recorded for this player yet." in body
+    assert "Not played yet." in body
 
 
 def test_player_page_chart_data_is_embedded(client, page_session, make_api_players):
@@ -106,7 +107,7 @@ def test_player_page_chart_data_is_embedded(client, page_session, make_api_playe
     play_round(client, page_session, [ada], [ben])
 
     body = text(client.get(f"/players/{ada}"))
-    assert "Rating over time" in body
+    assert 'id="ratingChart"' in body
     assert 'id="rating-points"' in body
     assert "/static/chart.min.js" in body
 
@@ -140,7 +141,7 @@ def test_player_page_charts_a_single_game_as_start_plus_one_point(
 def test_player_page_has_no_chart_without_games(client, api_season, make_api_players):
     (ada,) = make_api_players("Ada")
     body = text(client.get(f"/players/{ada}"))
-    assert "Rating over time" not in body
+    assert 'id="ratingChart"' not in body
     assert "chart.min.js" not in body
 
 
@@ -218,7 +219,7 @@ def test_drawer_links_open_in_a_new_tab(client, page_session, make_api_players):
 
     drawer = squash(text(client.get("/panel/leaderboard")))
     assert f'<a href="/players/{ada}" target="_blank" rel="noopener">' in drawer
-    assert "keep your place in the session" in drawer
+    assert "Names open in a new tab" in drawer
 
 
 def test_full_page_links_stay_in_the_same_tab(client, page_session, make_api_players):
@@ -240,18 +241,13 @@ def test_player_page_explains_rating_and_skill(client, page_session, make_api_pl
     play_round(client, page_session, [ada], [ben])
 
     body = squash(text(client.get(f"/players/{ada}")))
-    assert "What these numbers mean" in body
-    # Each term is defined in plain words.
-    assert "<strong>Skill</strong> is the league" in body
-    assert "<strong>Uncertainty</strong> is how sure" in body
-    assert "<strong>Rating</strong> is the single number" in body
-    # The parameters are named, not left as magic numbers.
-    assert "Everyone starts at 25" in body
-    assert "starts at 8.33" in body
-    assert "minus 3 times the uncertainty" in body
-    assert "scaled up by 40" in body
+    assert "How the rating works" in body
+    # Each term is explained, and the parameters are named rather than magic.
+    assert "Skill starts at 25" in body
+    assert "Uncertainty starts at 8.33" in body
+    assert "skill minus 3 times the uncertainty, times 40" in body
     # And why the subtraction exists at all.
-    assert "from topping the table" in body
+    assert "one good morning should not put you top" in body
     assert "Only wins and losses count" in body
 
 
@@ -267,11 +263,11 @@ def test_rating_explanation_works_through_the_players_own_numbers(
     mu, sigma, rating = detail["mu"], detail["sigma"], detail["rating"]
 
     body = squash(text(client.get(f"/players/{ada}")))
-    assert f"For Ada that is ({mu:.2f} &minus; 3 &times; {sigma:.2f}) &times; 40 = " in body
-    assert f"<strong>{rating}</strong>." in body
+    assert f"For Ada: ({mu:.2f} &minus; 3 &times; {sigma:.2f}) &times; 40 = " in body
+    assert f"<b>{rating}</b>." in body
     assert round((mu - 3 * sigma) * 40) == rating
 
 
 def test_no_explanation_for_a_player_without_games(client, api_season, make_api_players):
     (ada,) = make_api_players("Ada")
-    assert "What these numbers mean" not in text(client.get(f"/players/{ada}"))
+    assert "How the rating works" not in text(client.get(f"/players/{ada}"))

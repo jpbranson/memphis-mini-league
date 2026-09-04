@@ -1,67 +1,52 @@
 {# Team assignment and result entry. Swapped whole when teams are balanced. #}
-<div class="row between" style="margin-bottom:10px">
-  <h2 style="margin:0">Record a result</h2>
-</div>
+<h2 style="margin-top:6px">This round</h2>
 
 {% if balance_notice %}<div class="flash error">{{ balance_notice }}</div>{% endif %}
 
-{# Format picker (design doc 5.1). Posts to balance, so the two travel together. #}
 <form id="format-form" hx-post="/admin/session/{{ session.id }}/balance"
       hx-target="#record-card" hx-swap="innerHTML">
-  <div class="row wrap" style="align-items:flex-end; gap:8px">
-    <div class="grow" style="min-width:120px">
-      <label for="team_size">Team size</label>
+  <div class="row wrap" style="align-items:flex-end; gap:10px">
+    <div style="width:5.5rem">
+      <label for="team_size">Per side</label>
       <input type="text" id="team_size" name="team_size" value="{{ team_size }}"
-             placeholder="auto" inputmode="numeric" autocomplete="off">
+             placeholder="all" inputmode="numeric" autocomplete="off">
     </div>
-    <div class="grow" style="min-width:120px">
-      <label for="max_on_field">Most on the field</label>
+    <div style="width:5.5rem">
+      <label for="max_on_field">On field</label>
       <input type="text" id="max_on_field" name="max_on_field" value="{{ max_on_field }}"
              placeholder="5" inputmode="numeric" autocomplete="off">
     </div>
-    <button class="btn" type="submit">Balance teams</button>
+    <button class="btn" type="submit">Make teams</button>
   </div>
-  <p class="muted small" style="margin:6px 0 0">
-    Leave team size on auto to split everyone evenly. Set it smaller than the
-    turnout and whoever has played the most rounds today sits out. A roster
-    bigger than the on-field limit means substitutes rotating, not players sent
-    home. Both the prediction below and the recorded result use these numbers.
-  </p>
 </form>
 
 {% if benched %}
   <p class="small" style="margin:10px 0 0">
-    <strong>Sitting out this round:</strong>
+    Sitting out:
     {% for sp in benched %}{{ sp.player.name }}{% if not loop.last %}, {% endif %}{% endfor %}
-    {% if bench_auto %}<span class="muted">(most rounds played today)</span>{% endif %}
+    {%- if bench_auto %} <span class="muted">&mdash; most rounds so far</span>{% endif %}
   </p>
 {% endif %}
 
-{# The format fields live in the other form, so pull them in on submit: they
-   decide how many of each roster are on the field when the game is recorded. #}
 <form id="record-form" hx-post="/admin/session/{{ session.id }}/games" hx-target="#board"
       hx-include="#format-form" style="margin-top:12px">
-  <p class="muted small" style="margin-top:0">
-    Players left on "Out" sit this round.
-  </p>
-
   <ul class="plain">
     {% for sp in present %}
       {% set current = assignment.get(sp.player_id) %}
       <li>
         <span>{{ sp.player.name }}
           <span class="rating">
-            {%- if rating_of(sp.player_id).is_new %}new{% else %}{{ rating_of(sp.player_id).rating }}{% endif -%}
+            {%- if rating_of(sp.player_id).is_new %}&ndash;{% else %}{{ rating_of(sp.player_id).rating }}{% endif -%}
           </span>
-          {% if rounds_played.get(sp.player_id) %}
-            <span class="muted small">{{ rounds_played[sp.player_id] }} played</span>
-          {% endif %}
+          {%- if rounds_played.get(sp.player_id) %}
+            <span class="muted small">&times;{{ rounds_played[sp.player_id] }}</span>
+          {%- endif %}
         </span>
         <span class="seg">
           <label><input type="radio" name="assign_{{ sp.player_id }}" value="0"
-                 {% if current == 0 %}checked{% endif %}><span>A</span></label>
+                 {% if current == 0 %}checked{% endif %}><span>Light</span></label>
           <label><input type="radio" name="assign_{{ sp.player_id }}" value="1"
-                 {% if current == 1 %}checked{% endif %}><span>B</span></label>
+                 {% if current == 1 %}checked{% endif %}><span>Dark</span></label>
           <label><input type="radio" name="assign_{{ sp.player_id }}" value="out"
                  {% if current is none %}checked{% endif %}><span>Out</span></label>
         </span>
@@ -69,7 +54,7 @@
     {% endfor %}
   </ul>
 
-  <div id="balance-preview" style="margin-top:12px"
+  <div id="balance-preview" style="margin-top:10px"
        hx-post="/admin/session/{{ session.id }}/preview"
        hx-trigger="change from:#record-form, change from:#format-form"
        hx-include="#record-form, #format-form"
@@ -78,48 +63,42 @@
     {% include "partials/balance_panel.html" %}
   </div>
 
-  <label style="margin-top:14px">Who won?</label>
-  <div class="winner">
-    <label><input type="radio" name="winner" value="0">Team A</label>
-    <label><input type="radio" name="winner" value="1">Team B</label>
+  <div class="winner" style="margin-top:16px">
+    <label><input type="radio" name="winner" value="0">Light won</label>
+    <label><input type="radio" name="winner" value="1">Dark won</label>
   </div>
 
   <div class="row" style="margin-top:12px">
     <div class="grow">
-      <label for="score_0">Score A (optional)</label>
+      <label for="score_0">Light score</label>
       <input type="number" id="score_0" name="score_0" min="0" inputmode="numeric">
     </div>
     <div class="grow">
-      <label for="score_1">Score B (optional)</label>
+      <label for="score_1">Dark score</label>
       <input type="number" id="score_1" name="score_1" min="0" inputmode="numeric">
     </div>
   </div>
 
-  <button class="btn primary" style="margin-top:12px" type="submit">Record result</button>
+  <button class="btn primary" style="margin-top:14px; width:100%" type="submit">
+    Record it</button>
 </form>
 
 {% if team_a and team_b %}
-  {# Swap one for one (design doc 5.2). Two taps instead of four, and the
-     prediction updates with the new teams. #}
   <form hx-post="/admin/session/{{ session.id }}/swap"
         hx-target="#record-card" hx-swap="innerHTML"
         hx-include="#record-form, #format-form"
-        style="margin-top:14px; border-top:1px solid var(--line); padding-top:12px">
-    <label>Swap two players</label>
+        style="margin-top:18px">
+    <label>Swap a pair</label>
     <div class="row wrap" style="gap:8px; align-items:flex-end">
-      <div class="grow" style="min-width:110px">
-        <select name="swap_a" aria-label="Player from Team A"
-                style="width:100%;padding:10px;border-radius:9px;
-                       border:1px solid var(--line);background:var(--bg);color:var(--ink)">
+      <div class="grow" style="min-width:7rem">
+        <select name="swap_a" aria-label="Player in light">
           {% for sp in team_a %}
             <option value="{{ sp.player_id }}">{{ sp.player.name }}</option>
           {% endfor %}
         </select>
       </div>
-      <div class="grow" style="min-width:110px">
-        <select name="swap_b" aria-label="Player from Team B"
-                style="width:100%;padding:10px;border-radius:9px;
-                       border:1px solid var(--line);background:var(--bg);color:var(--ink)">
+      <div class="grow" style="min-width:7rem">
+        <select name="swap_b" aria-label="Player in dark">
           {% for sp in team_b %}
             <option value="{{ sp.player_id }}">{{ sp.player.name }}</option>
           {% endfor %}

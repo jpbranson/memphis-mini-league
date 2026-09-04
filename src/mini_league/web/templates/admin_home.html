@@ -2,7 +2,7 @@
 {% block title %}Organizer — Mini League{% endblock %}
 {% block body %}
 <h1>Mini League</h1>
-<p class="sub">Organizer view. The public leaderboard arrives in milestone 3.</p>
+
 
 {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
 
@@ -24,7 +24,7 @@
 {% else %}
   <div class="card">
     <h2>Start a season first</h2>
-    <p class="muted small">Sessions infer their season from their date, so one season must exist.</p>
+    <p class="muted small">A session needs a season to sit in.</p>
     <form method="post" action="/admin/seasons">
       <label for="season-name">Season name</label>
       <input type="text" id="season-name" name="name" placeholder="Fall 2026" required>

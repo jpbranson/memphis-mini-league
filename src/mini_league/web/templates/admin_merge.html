@@ -2,10 +2,7 @@
 {% block title %}Merge {{ source.name }} — Mini League{% endblock %}
 {% block body %}
 <h1>Merge {{ source.name }}</h1>
-<p class="sub">
-  Fold this record into another player. Every game and check-in moves across,
-  ratings are replayed, and the merge can be undone from the audit log.
-</p>
+<p class="sub">Games and check-ins move across. Undo from the audit log.</p>
 
 {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
 
@@ -13,10 +10,7 @@
   <div class="card">
     <h2>Keep which player?</h2>
     {% if candidates %}
-      <p class="muted small" style="margin-top:0">
-        Closest names first. {{ source.name }} will be retired and their history
-        will move to whoever you pick.
-      </p>
+      <p class="muted small" style="margin-top:0">Closest names first.</p>
       <ul class="plain">
         {% for candidate in candidates %}
           <li>

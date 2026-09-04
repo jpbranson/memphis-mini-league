@@ -1,122 +1,104 @@
-{# The whole day-of screen. Every action re-renders this, so the board is always
-   consistent with the database. Swapped into #board by HTMX. #}
+{# The whole day-of screen. Every action re-renders this. Swapped into #board. #}
 
 {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
-{% if notice %}<div class="flash ok">{{ notice }}</div>{% endif %}
+{% if notice %}<div class="flash">{{ notice }}</div>{% endif %}
 
 {% if duplicate_name %}
   {% include "partials/duplicate_warning.html" %}
 {% endif %}
 
-<div class="card">
-  <h2>Checked in ({{ present|length }})</h2>
-  {% if present %}
-    <ul class="plain">
-      {% for sp in present %}
-        <li>
-          <span>
-            <a href="/players/{{ sp.player_id }}">{{ sp.player.name }}</a>
-            <span class="rating">
-              {%- if rating_of(sp.player_id).is_new %}new{% else %}{{ rating_of(sp.player_id).rating }}{% endif -%}
-            </span>
+<h2>Here ({{ present|length }})</h2>
+{% if present %}
+  <ul class="plain">
+    {% for sp in present %}
+      <li>
+        <span><a href="/players/{{ sp.player_id }}">{{ sp.player.name }}</a>
+          <span class="rating">
+            {%- if rating_of(sp.player_id).is_new %}&ndash;{% else %}{{ rating_of(sp.player_id).rating }}{% endif -%}
           </span>
-          <button class="btn small"
-                  hx-post="/admin/session/{{ session.id }}/checkout"
-                  hx-vals='{"player_id": {{ sp.player_id }}}'
-                  hx-target="#board">Check out</button>
-        </li>
-      {% endfor %}
-    </ul>
-  {% else %}
-    <p class="muted small">Nobody checked in yet. Tap a name below.</p>
-  {% endif %}
+        </span>
+        <button class="btn small"
+                hx-post="/admin/session/{{ session.id }}/checkout"
+                hx-vals='{"player_id": {{ sp.player_id }}}'
+                hx-target="#board">Left</button>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="muted small">Nobody yet. Tap a name below.</p>
+{% endif %}
 
-  {% if away %}
-    <h2 style="margin-top:16px">Left ({{ away|length }})</h2>
-    <ul class="plain">
-      {% for sp in away %}
-        <li>
-          <span class="muted">{{ sp.player.name }}
-            <span class="rating">
-              {%- if rating_of(sp.player_id).is_new %}new{% else %}{{ rating_of(sp.player_id).rating }}{% endif -%}
-            </span>
-          </span>
-          <button class="btn small"
-                  hx-post="/admin/session/{{ session.id }}/checkin"
-                  hx-vals='{"player_id": {{ sp.player_id }}}'
-                  hx-target="#board">Check back in</button>
-        </li>
-      {% endfor %}
-    </ul>
-  {% endif %}
-</div>
+{% if away %}
+  <h2>Gone ({{ away|length }})</h2>
+  <ul class="plain">
+    {% for sp in away %}
+      <li>
+        <span class="muted">{{ sp.player.name }}</span>
+        <button class="btn small"
+                hx-post="/admin/session/{{ session.id }}/checkin"
+                hx-vals='{"player_id": {{ sp.player_id }}}'
+                hx-target="#board">Back</button>
+      </li>
+    {% endfor %}
+  </ul>
+{% endif %}
 
-<div class="card">
-  <h2>Check in a player</h2>
-  <label for="q">Tap a name, or search to filter and add someone new</label>
-  <input type="text" id="q" name="q" placeholder="Search or add a name"
-         autocomplete="off"
-         hx-get="/admin/session/{{ session.id }}/search"
-         hx-trigger="keyup changed delay:200ms, search"
-         hx-target="#checkin-list">
-  <div id="checkin-list">
-    {% include "partials/checkin_list.html" %}
-  </div>
+<h2>Check in</h2>
+<input type="text" id="q" name="q" placeholder="Name" autocomplete="off"
+       hx-get="/admin/session/{{ session.id }}/search"
+       hx-trigger="keyup changed delay:200ms, search"
+       hx-target="#checkin-list">
+<div id="checkin-list">
+  {% include "partials/checkin_list.html" %}
 </div>
 
 {% if present|length >= 2 %}
-<div class="card" id="record-card">
-  {% include "partials/record_form.html" %}
-</div>
+  <div id="record-card" style="border-top:2px solid var(--rule); margin-top:26px; padding-top:6px">
+    {% include "partials/record_form.html" %}
+  </div>
 {% endif %}
 
-<div class="card">
-  <h2>Rounds ({{ games|length }})</h2>
-  {% if games %}
-    <ul class="plain">
-      {% for game in games %}
-        <li style="flex-direction:column; align-items:stretch">
-          <div class="row between">
-            <strong>Round {{ game.round_number }}</strong>
-            <span class="row" style="gap:6px">
-              <a class="btn small" href="/admin/games/{{ game.id }}/edit">Edit</a>
-              <button class="btn small danger"
-                      hx-post="/admin/games/{{ game.id }}/delete"
-                      hx-target="#board"
-                      hx-confirm="Delete round {{ game.round_number }}? Ratings will be replayed.">
-                Delete</button>
-            </span>
-          </div>
-          {% for team in game.teams|sort(attribute="team_index") %}
-            <div class="small" style="margin-top:4px">
-              <span class="{{ 'teamA' if team.team_index == 0 else 'teamB' }}">
-                {{ "A" if team.team_index == 0 else "B" }}{% if team.rank == 1 %} (won){% endif %}
-              </span>
-              {% for pid in team.player_ids %}{{ player_name(pid) }}{% if not loop.last %}, {% endif %}{% endfor %}
-              {% if team.score is not none %}<span class="muted"> &middot; {{ team.score }}</span>{% endif %}
-            </div>
-          {% endfor %}
-          <div class="muted small" style="margin-top:4px">
-            {{ game.players_on_field }} per team on the field
-          </div>
-        </li>
+<h2 style="border-top:2px solid var(--rule); padding-top:14px">Rounds ({{ games|length }})</h2>
+{% if games %}
+  {% for game in games %}
+    <div style="margin-bottom:14px">
+      <div class="row between">
+        <span class="row" style="gap:8px; align-items:baseline">
+          <span class="cond" style="font-weight:700">{{ game.round_number }}</span>
+          <span class="muted small">{{ game.players_on_field }} a side</span>
+        </span>
+        <span class="row" style="gap:8px">
+          <a class="btn small" href="/admin/games/{{ game.id }}/edit">Edit</a>
+          <button class="btn small danger"
+                  hx-post="/admin/games/{{ game.id }}/delete"
+                  hx-target="#board"
+                  hx-confirm="Delete round {{ game.round_number }}?">Delete</button>
+        </span>
+      </div>
+      {% for team in game.teams|sort(attribute="team_index") %}
+        <div class="small" style="margin-top:3px">
+          <span class="{{ 'shirt-light' if team.team_index == 0 else 'shirt-dark' }}">{{
+            "Light" if team.team_index == 0 else "Dark" }}</span>
+          {% if team.score is not none %}<b class="cond">{{ team.score }}</b>{% endif %}
+          {% for pid in team.player_ids %}{{ player_name(pid) }}{% if not loop.last %}, {% endif %}{% endfor %}
+        </div>
       {% endfor %}
-    </ul>
-  {% else %}
-    <p class="muted small">No rounds recorded yet.</p>
-  {% endif %}
+    </div>
+  {% endfor %}
+{% else %}
+  <p class="muted small">Nothing played yet.</p>
+{% endif %}
 
-  {% if deleted_games %}
-    <h2 style="margin-top:16px">Deleted</h2>
-    <ul class="plain">
-      {% for game in deleted_games %}
-        <li>
-          <span class="muted small">Round {{ game.round_number }}, excluded from ratings</span>
-          <button class="btn small"
-                  hx-post="/admin/games/{{ game.id }}/restore"
-                  hx-target="#board">Undo</button>
-        </li>
-      {% endfor %}
-    </ul>
-  {% endif %}
-</div>
+{% if deleted_games %}
+  <h2>Deleted</h2>
+  <ul class="plain">
+    {% for game in deleted_games %}
+      <li>
+        <span class="muted small">Round {{ game.round_number }}</span>
+        <button class="btn small"
+                hx-post="/admin/games/{{ game.id }}/restore"
+                hx-target="#board">Undo</button>
+      </li>
+    {% endfor %}
+  </ul>
+{% endif %}

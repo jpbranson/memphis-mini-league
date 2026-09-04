@@ -1,44 +1,26 @@
 {% extends "base.html" %}
-{% block title %}Leaderboard — Mini League{% endblock %}
+{% block title %}Mini League{% endblock %}
 {% block body %}
-<h1>Leaderboard</h1>
-<p class="sub">
-  {% if season %}{{ season.name }}{% else %}No season yet{% endif %}
-</p>
-
-{% if seasons %}
-<div class="card">
-  <form method="get" action="/">
-    <div class="row wrap">
-      <div class="grow">
-        <label for="season_id">Season</label>
-        <select id="season_id" name="season_id"
-                style="width:100%;padding:11px;border-radius:9px;
-                       border:1px solid var(--line);background:var(--bg);color:var(--ink)">
-          {% for s in seasons %}
-            <option value="{{ s.id }}" {% if season and s.id == season.id %}selected{% endif %}>
-              {{ s.name }}{% if not s.end_date %} (current){% endif %}
-            </option>
-          {% endfor %}
-        </select>
-      </div>
-      <div style="width:120px">
-        <label for="min_games">Min games</label>
-        <input type="number" id="min_games" name="min_games" min="0" value="{{ min_games }}"
-               inputmode="numeric">
-      </div>
-    </div>
-    <button class="btn" style="margin-top:10px" type="submit">Show</button>
-  </form>
-</div>
-{% endif %}
-
-<div class="card">
-  {% include "partials/leaderboard_table.html" %}
+<div class="row between" style="align-items:baseline">
+  <h1>{% if season %}{{ season.name }}{% else %}Mini League{% endif %}</h1>
+  {% if seasons|length > 1 %}
+    <form method="get" action="/" class="row" style="gap:6px">
+      <select name="season_id" onchange="this.form.submit()" style="width:auto;padding:6px 8px">
+        {% for s in seasons %}
+          <option value="{{ s.id }}" {% if season and s.id == season.id %}selected{% endif %}>
+            {{ s.name }}</option>
+        {% endfor %}
+      </select>
+      <input type="hidden" name="min_games" value="{{ min_games }}">
+      <noscript><button class="btn small" type="submit">Go</button></noscript>
+    </form>
+  {% endif %}
 </div>
 
-<p class="muted small">
-  Rating is the conservative estimate, three standard deviations below a player's
-  mean skill, so a player with one lucky win does not top the table.
+{% include "partials/leaderboard_table.html" %}
+
+<p class="muted small" style="margin-top:26px">
+  Rating is skill minus three times the uncertainty, so a single good morning
+  does not put you top. Tap a name for the workings.
 </p>
 {% endblock %}

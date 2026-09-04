@@ -1,48 +1,48 @@
-{# Standings table. Used full width on the leaderboard page and inside the drawer. #}
 {% if not season %}
   <p class="muted small">No seasons yet.</p>
 {% elif not rows and hidden_count %}
   <p class="muted small">
-    Nobody has played {{ min_games }} games yet, so all
-    {{ hidden_count }} rated player(s) are hidden with fewer than {{ min_games }} games.
-    Lower the minimum to see them.
+    Nobody has {{ min_games }} games yet. {{ hidden_count }} rated
+    player{{ "" if hidden_count == 1 else "s" }} hidden.
+    <a href="/?min_games=0">Show everyone</a>.
   </p>
 {% elif not rows %}
-  <p class="muted small">No ratings yet for {{ season.name }}.</p>
+  <p class="muted small">Nothing played in {{ season.name }}.</p>
 {% else %}
   <table class="board">
     <thead>
       <tr>
-        <th class="num">#</th>
+        <th class="num">&nbsp;</th>
         <th>Player</th>
         <th class="num">Rating</th>
-        <th class="num">W-L</th>
+        <th class="num">W&ndash;L</th>
         {% if not compact %}<th class="num">Games</th>{% endif %}
       </tr>
     </thead>
     <tbody>
       {% for row in rows %}
         <tr>
-          <td class="num">{{ row.rank }}</td>
-          {# In the drawer, names open in a new tab: following a link here would
-             navigate away from a session the organizer is part way through. #}
+          <td class="num muted" style="font-size:.9rem;font-weight:400">{{ row.rank }}</td>
+          {# In the drawer, names open in a new tab: following a link there
+             would abandon a session part way through being set up. #}
           <td><a href="/players/{{ row.player.id }}"
                  {% if compact %}target="_blank" rel="noopener"{% endif %}>{{ row.player.name }}</a></td>
           <td class="num">{{ row.rating }}</td>
-          <td class="num">{{ row.record }}</td>
-          {% if not compact %}<td class="num">{{ row.games_played }}</td>{% endif %}
+          <td class="num" style="font-size:.9rem;font-weight:400">{{ row.record }}</td>
+          {% if not compact %}
+            <td class="num" style="font-size:.9rem;font-weight:400">{{ row.games_played }}</td>
+          {% endif %}
         </tr>
       {% endfor %}
     </tbody>
   </table>
   {% if hidden_count %}
     <p class="muted small" style="margin-top:8px">
-      {{ hidden_count }} player(s) hidden with fewer than {{ min_games }} games.
+      {{ hidden_count }} under {{ min_games }} games hidden.
+      <a href="/?min_games=0">Show everyone</a>.
     </p>
   {% endif %}
   {% if compact %}
-    <p class="muted small" style="margin-top:10px">
-      Names open in a new tab, so you keep your place in the session.
-    </p>
+    <p class="muted small" style="margin-top:12px">Names open in a new tab.</p>
   {% endif %}
 {% endif %}

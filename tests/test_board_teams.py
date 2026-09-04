@@ -30,7 +30,7 @@ def assignments_in(body: str) -> dict[int, str]:
 def test_new_players_show_as_new(client, page_session, make_api_players):
     (ada,) = make_api_players("Ada")
     body = text(client.post(f"/admin/session/{page_session}/checkin", data={"player_id": ada}))
-    assert '<span class="rating">new</span>' in re.sub(r"\s+", " ", body)
+    assert '<span class="rating">&ndash;</span>' in re.sub(r"\s+", " ", body)
 
 
 def test_rating_appears_next_to_a_player_with_games(client, page_session, make_api_players):
@@ -45,7 +45,7 @@ def test_rating_appears_next_to_a_player_with_games(client, page_session, make_a
 
     body = re.sub(r"\s+", " ", text(client.get(f"/admin/session/{page_session}")))
     assert f'<span class="rating">{ada_rating}</span>' in body
-    assert "new" not in body.split("Checked in")[1].split("Check in a player")[0]
+    assert "&ndash;" not in body.split("Here (")[1].split("Check in")[0]
 
 
 def test_ratings_show_in_the_check_in_list_too(client, page_session, make_api_players):
@@ -62,7 +62,7 @@ def test_balance_button_is_offered(client, page_session, make_api_players):
     ids = make_api_players("Ada", "Ben")
     check_in_all(client, page_session, ids)
     body = text(client.get(f"/admin/session/{page_session}"))
-    assert "Balance teams" in body
+    assert "Make teams" in body
     assert f'hx-post="/admin/session/{page_session}/balance"' in body
 
 
@@ -145,7 +145,7 @@ def test_panel_prompts_before_teams_are_picked(client, page_session, make_api_pl
     ids = make_api_players("Ada", "Ben")
     check_in_all(client, page_session, ids)
     body = text(client.get(f"/admin/session/{page_session}"))
-    assert "Put at least one player on each team" in body
+    assert "Put someone on each side" in body
 
 
 def test_panel_reports_strengths_and_prediction(client, page_session, make_api_players):
@@ -157,8 +157,8 @@ def test_panel_reports_strengths_and_prediction(client, page_session, make_api_p
     )
     assert r.status_code == 200
     body = re.sub(r"\s+", " ", text(r))
-    assert "Team A" in body and "Team B" in body
-    assert "Predicted 50% to 50%" in body
+    assert "Light" in body and "Dark" in body
+    assert "50&ndash;50" in body
     assert "Even match" in body
 
 
@@ -182,7 +182,7 @@ def test_panel_shows_a_lopsided_match_as_such(client, page_session, make_api_pla
         ),
     )
     assert "Even match" not in body
-    assert "Predicted" in body
+    assert "a side" in body
 
 
 def test_panel_flags_uneven_rosters(client, page_session, make_api_players):
@@ -192,7 +192,7 @@ def test_panel_flags_uneven_rosters(client, page_session, make_api_players):
         f"/admin/session/{page_session}/preview",
         data={f"assign_{ids[0]}": "0", f"assign_{ids[1]}": "1", f"assign_{ids[2]}": "1"},
     ).text
-    assert "Uneven rosters" in body
+    assert "Bigger roster is weighted down" in body
 
 
 def test_panel_is_wired_to_refresh_on_change(client, page_session, make_api_players):
@@ -238,9 +238,9 @@ def test_panel_explains_why_totals_look_low_with_new_players(
             data={f"assign_{veteran}": "0", f"assign_{rookie}": "1"},
         ).text,
     )
-    assert "1 new player rated 0 until they have played" in body
-    assert "trust the percentages" in body
-    assert "Team B" in body
+    assert "1 unrated player" in body
+    assert "Trust the split" in body
+    assert "Dark" in body
 
 
 def test_panel_says_nothing_about_newcomers_when_everyone_is_rated(
@@ -256,4 +256,4 @@ def test_panel_says_nothing_about_newcomers_when_everyone_is_rated(
         f"/admin/session/{page_session}/preview",
         data={f"assign_{ada}": "0", f"assign_{ben}": "1"},
     ).text
-    assert "new player" not in body
+    assert "unrated player" not in body

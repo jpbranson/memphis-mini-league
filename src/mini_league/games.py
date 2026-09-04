@@ -83,20 +83,19 @@ def _validate_team_inputs(
     # Cross-check the winner against the scores, naming the discrepancy so the
     # organizer can see which of the two they got wrong.
     if len(teams) == 2 and all(t.score is not None for t in teams):
-        letters = ("A", "B")
+        shirts = ("light", "dark")
         winner_index = min(range(2), key=lambda i: teams[i].rank)
         loser_index = 1 - winner_index
         winner, loser = teams[winner_index], teams[loser_index]
         if winner.score == loser.score:
             raise ValueError(
-                f"Both teams are down as scoring {winner.score}. "
-                "Games cannot end in a tie, so one score needs to change."
+                f"Both sides are down as scoring {winner.score}. "
+                "Games are played out, so one of them has to change."
             )
         if winner.score < loser.score:
             raise ValueError(
-                f"Team {letters[winner_index]} is marked as the winner but scored "
-                f"{winner.score}, while Team {letters[loser_index]} scored {loser.score}. "
-                "Change the winner, or swap the scores."
+                f"The {shirts[winner_index]} team is down as winning but scored "
+                f"{winner.score} to {loser.score}. Change the winner or the scores."
             )
 
     players = {p.id: p for p in db.scalars(select(Player).where(Player.id.in_(all_ids)))}

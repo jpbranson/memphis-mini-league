@@ -1,41 +1,26 @@
 {# Live matchup readout, refreshed by htmx whenever an assignment changes. #}
 {% if matchup.ready %}
   {% set pa = (matchup.win_probability_a * 100) | round | int %}
-  {% set pb = 100 - pa %}
-  <div class="row between small">
-    <span><span class="teamA">Team A</span>
-      <strong class="rating" style="color:inherit">{{ matchup.rating_a }}</strong>
-      <span class="muted">({{ matchup.count_a }})</span></span>
-    <span><span class="teamB">Team B</span>
-      <strong class="rating" style="color:inherit">{{ matchup.rating_b }}</strong>
-      <span class="muted">({{ matchup.count_b }})</span></span>
+  <div class="row between" style="margin:4px 0 2px">
+    <span><span class="shirt-light">Light</span>
+      <span class="tally">{{ matchup.rating_a }}</span>
+      <span class="muted small">{{ matchup.count_a }}</span></span>
+    <span class="cond" style="font-weight:700">{{ pa }}&ndash;{{ 100 - pa }}</span>
+    <span><span class="muted small">{{ matchup.count_b }}</span>
+      <span class="tally">{{ matchup.rating_b }}</span>
+      <span class="shirt-dark">Dark</span></span>
   </div>
-  <div class="bar">
-    <div class="a" style="width: {{ pa }}%"></div>
-    <div class="b" style="width: {{ pb }}%"></div>
-  </div>
-  <div class="muted small">
-    {{ matchup.verdict }}. Predicted {{ pa }}% to {{ pb }}%,
-    at {{ matchup.players_on_field }} per team on the field.
-  </div>
-  {% if matchup.count_a != matchup.count_b %}
-    <div class="muted small">
-      Uneven rosters, so the bigger team is weighted down rather than treated as stronger.
-    </div>
-  {% endif %}
-  {% if matchup.has_new %}
-    <div class="muted small">
-      The totals read low for
-      {% if matchup.new_a and matchup.new_b %}both teams{% elif matchup.new_a %}Team A{% else %}Team B{% endif %},
-      which {{ "include" if (matchup.new_a + matchup.new_b) > 1 else "includes" }}
-      {{ matchup.new_a + matchup.new_b }} new
-      player{{ "" if (matchup.new_a + matchup.new_b) == 1 else "s" }}
-      rated 0 until they have played. The prediction already treats them as average,
-      so trust the percentages here.
-    </div>
-  {% endif %}
-{% else %}
-  <p class="muted small" style="margin:0">
-    Put at least one player on each team to see how the match looks.
+  <p class="small muted" style="margin:2px 0 0">
+    {{ matchup.verdict }}, {{ matchup.players_on_field }} a side.
+    {%- if matchup.count_a != matchup.count_b %}
+      Bigger roster is weighted down, not counted as stronger.
+    {%- endif %}
+    {%- if matchup.has_new %}
+      Totals read low: {{ matchup.new_a + matchup.new_b }} unrated
+      player{{ "" if (matchup.new_a + matchup.new_b) == 1 else "s" }} count as 0 until
+      they play. Trust the split, not the totals.
+    {%- endif %}
   </p>
+{% else %}
+  <p class="muted small" style="margin:4px 0 0">Put someone on each side.</p>
 {% endif %}

@@ -216,10 +216,9 @@ def test_session_detail_shows_each_round(client, page_session, make_api_players)
     play_round(client, page_session, [ada, ben], [cleo, dev], score=(5, 3))
 
     body = squash(text(client.get(f"/sessions/{page_session}")))
-    assert "Round 1" in body
-    assert "A won" in body
+    assert "shirt-light" in body and "shirt-dark" in body
     assert "Ada" in body and "Cleo" in body
-    assert "5" in body and "3" in body
+    assert "<b>won</b>" in body
     assert "2 a side" in body
     assert "Who was there (4)" in body
 
@@ -228,7 +227,7 @@ def test_session_detail_notes_substitutes(client, page_session, make_api_players
     ids = make_api_players(*[f"P{i}" for i in range(7)])
     check_in_all(client, page_session, ids)
     play_round(client, page_session, ids[:4], ids[4:])
-    assert "Substitutes rotated." in squash(text(client.get(f"/sessions/{page_session}")))
+    assert "subs rotating" in squash(text(client.get(f"/sessions/{page_session}")))
 
 
 def test_session_history_is_public(visitor, tmp_path):

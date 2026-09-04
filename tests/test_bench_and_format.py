@@ -39,14 +39,12 @@ def sitting_out(body: str) -> set[int]:
 
 
 def bench_names(body: str) -> list[str]:
-    """The names printed after the "Sitting out this round" label."""
-    match = re.search(
-        r"Sitting out this round:</strong>(.*?)</p>", squash(body), re.S
-    )
+    """The names printed after the "Sitting out" label."""
+    match = re.search(r"Sitting out:(.*?)</p>", squash(body), re.S)
     if not match:
         return []
     text_only = re.sub(r"<[^>]+>", " ", match.group(1))
-    text_only = text_only.replace("(most rounds played today)", "")
+    text_only = re.sub(r"(&mdash;|—).*", "", text_only)
     return [name.strip() for name in text_only.split(",") if name.strip()]
 
 
@@ -122,8 +120,8 @@ def test_board_offers_the_format_picker(client, page_session, make_api_players):
     body = text(client.get(f"/admin/session/{page_session}"))
     assert 'name="team_size"' in body
     assert 'name="max_on_field"' in body
-    assert "Balance teams" in body
-    assert 'placeholder="auto"' in body
+    assert "Make teams" in body
+    assert 'placeholder="all"' in body
 
 
 def test_auto_puts_everyone_in_a_team(client, page_session, make_api_players):
@@ -134,7 +132,7 @@ def test_auto_puts_everyone_in_a_team(client, page_session, make_api_players):
     )
     chosen = assignments_in(text(r))
     assert set(chosen) == set(ids)
-    assert "Sitting out this round" not in text(r)
+    assert "Sitting out:" not in text(r)
 
 
 def test_team_size_benches_the_extra_players(client, page_session, make_api_players):
@@ -147,8 +145,8 @@ def test_team_size_benches_the_extra_players(client, page_session, make_api_play
     chosen = assignments_in(body)
     assert len(chosen) == 6, "three a side"
     assert sorted(chosen.values()) == ["0"] * 3 + ["1"] * 3
-    assert "Sitting out this round" in body
-    assert "most rounds played today" in squash(body)
+    assert "Sitting out:" in body
+    assert "most rounds so far" in squash(body)
 
 
 def test_bench_picks_whoever_has_played_most_today(client, page_session, make_api_players):
@@ -182,7 +180,7 @@ def test_large_turnout_uses_substitutes_not_a_bench(client, page_session, make_a
     body = text(r)
     chosen = assignments_in(body)
     assert len(chosen) == 12
-    assert "Sitting out this round" not in body
+    assert "Sitting out:" not in body
 
 
 def test_rounds_played_is_shown_next_to_players(client, page_session, make_api_players):
@@ -193,7 +191,7 @@ def test_rounds_played_is_shown_next_to_players(client, page_session, make_api_p
         data={f"assign_{ids[0]}": "0", f"assign_{ids[1]}": "1", "winner": "0"},
     )
     body = squash(text(client.get(f"/admin/session/{page_session}")))
-    assert "1 played" in body
+    assert "&times;1" in body or "�1" in body
 
 
 def test_bad_format_input_is_reported(client, page_session, make_api_players):
@@ -225,10 +223,10 @@ def test_format_choices_survive_a_balance(client, page_session, make_api_players
 def test_swap_control_appears_once_teams_exist(client, page_session, make_api_players):
     ids = make_api_players("A", "B", "C", "D")
     check_in_all(client, page_session, ids)
-    assert "Swap two players" not in text(client.get(f"/admin/session/{page_session}"))
+    assert "Swap a pair" not in text(client.get(f"/admin/session/{page_session}"))
 
     body = text(client.post(f"/admin/session/{page_session}/balance", data={}))
-    assert "Swap two players" in body
+    assert "Swap a pair" in body
     assert 'name="swap_a"' in body and 'name="swap_b"' in body
 
 
@@ -274,8 +272,8 @@ def test_swap_updates_the_prediction(client, page_session, make_api_players):
             )
         )
     )
-    before_pct = re.search(r"Predicted (\d+)% to", before).group(1)
-    after_pct = re.search(r"Predicted (\d+)% to", after).group(1)
+    before_pct = re.search(r"(\d+)&ndash;\d+", before).group(1)
+    after_pct = re.search(r"(\d+)&ndash;\d+", after).group(1)
     assert before_pct != after_pct
 
 
@@ -330,7 +328,7 @@ def test_sitting_out_survives_a_swap(client, page_session, make_api_players):
             data={"team_size": "2", "max_on_field": "5"},
         )
     )
-    assert "Sitting out this round" in balanced
+    assert "Sitting out:" in balanced
     assignment = assignments_in(balanced)
     team_a = [pid for pid, side in assignment.items() if side == "0"]
     team_b = [pid for pid, side in assignment.items() if side == "1"]
@@ -338,7 +336,7 @@ def test_sitting_out_survives_a_swap(client, page_session, make_api_players):
     data = {f"assign_{pid}": side for pid, side in assignment.items()}
     data.update({"swap_a": str(team_a[0]), "swap_b": str(team_b[0]), "team_size": "2"})
     after = text(client.post(f"/admin/session/{page_session}/swap", data=data))
-    assert "Sitting out this round" in after
+    assert "Sitting out:" in after
     assert sitting_out(after) == sitting_out(balanced)
 
 
@@ -361,7 +359,7 @@ def test_manual_out_is_listed_without_claiming_it_was_automatic(
         )
     )
     assert bench_names(body) == ["C"]
-    assert "most rounds played today" not in body
+    assert "most rounds so far" not in body
 
 
 # --- the on-field limit actually reaches the recorded game -----------------------
@@ -436,8 +434,8 @@ def test_the_prediction_uses_the_same_limit(client, page_session, make_api_playe
             )
         )
     )
-    assert "at 5 per team on the field" in capped
-    assert "at 6 per team on the field" in uncapped
+    assert "5 a side" in capped
+    assert "6 a side" in uncapped
 
 
 def test_the_duplicate_lower_field_is_gone(client, page_session, make_api_players):

@@ -4,7 +4,7 @@
 <div class="row between">
   <div>
     <h1>Settings</h1>
-    <p class="sub">What the rating system is currently using.</p>
+    
   </div>
   <a class="btn small" href="/admin/audit">Audit log</a>
 </div>
@@ -68,18 +68,16 @@
     </tbody>
   </table>
   <p class="muted small" style="margin-bottom:0">
-    These live in the settings file. Any of them can be overridden with an
-    environment variable, for example MINI_LEAGUE_BETA, then restart. Changing a
-    rating setting only takes effect on past games once you replay them below.
+    Override any of these with an environment variable, for example
+    MINI_LEAGUE_BETA, then restart and replay below.
   </p>
 </div>
 
 <div class="card">
   <h2>Replay every rating</h2>
   <p class="muted small" style="margin-top:0">
-    Recomputes all {{ seasons }} season{{ "" if seasons == 1 else "s" }} from the
-    recorded games. Safe to run at any time. Use it after changing a setting
-    above, or if you ever suspect the standings have drifted.
+    Rebuilds all {{ seasons }} season{{ "" if seasons == 1 else "s" }} from the
+    games. Safe any time.
   </p>
   <form method="post" action="/admin/settings/recompute">
     <button class="btn primary" type="submit">Replay every rating</button>

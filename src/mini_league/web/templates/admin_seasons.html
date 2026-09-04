@@ -4,7 +4,7 @@
 <div class="row between">
   <div>
     <h1>Seasons</h1>
-    <p class="sub">Ratings restart each season. Nothing is ever deleted.</p>
+    <p class="sub">Ratings restart each season. Nothing is deleted.</p>
   </div>
   <a class="btn small" href="/admin">Organizer</a>
 </div>
@@ -16,10 +16,9 @@
   <h2>Start a new season</h2>
   <p class="muted small" style="margin-top:0">
     {% if current %}
-      This ends {{ current.name }} the day before the new one starts. Past
-      sessions, games and standings all stay viewable.
+      Ends {{ current.name }} the day before this one starts.
     {% else %}
-      No season is open, so sessions cannot be created until you start one.
+      No season is open, so no sessions can be created.
     {% endif %}
   </p>
   <form method="post" action="/admin/seasons">

@@ -19,9 +19,9 @@
           </span>
           <span class="seg">
             <label><input type="radio" name="assign_{{ player.id }}" value="0"
-                   {% if current == 0 %}checked{% endif %}><span>A</span></label>
+                   {% if current == 0 %}checked{% endif %}><span>Light</span></label>
             <label><input type="radio" name="assign_{{ player.id }}" value="1"
-                   {% if current == 1 %}checked{% endif %}><span>B</span></label>
+                   {% if current == 1 %}checked{% endif %}><span>Dark</span></label>
             <label><input type="radio" name="assign_{{ player.id }}" value="out"
                    {% if current is none %}checked{% endif %}><span>Out</span></label>
           </span>
@@ -32,19 +32,19 @@
     <label style="margin-top:14px">Who won?</label>
     <div class="winner">
       <label><input type="radio" name="winner" value="0"
-             {% if winner_index == 0 %}checked{% endif %}>Team A</label>
+             {% if winner_index == 0 %}checked{% endif %}>Light won</label>
       <label><input type="radio" name="winner" value="1"
-             {% if winner_index == 1 %}checked{% endif %}>Team B</label>
+             {% if winner_index == 1 %}checked{% endif %}>Dark won</label>
     </div>
 
     <div class="row" style="margin-top:12px">
       <div class="grow">
-        <label for="score_0">Score A</label>
+        <label for="score_0">Light score</label>
         <input type="number" id="score_0" name="score_0" min="0" inputmode="numeric"
                value="{{ teams[0].score if teams[0].score is not none else '' }}">
       </div>
       <div class="grow">
-        <label for="score_1">Score B</label>
+        <label for="score_1">Dark score</label>
         <input type="number" id="score_1" name="score_1" min="0" inputmode="numeric"
                value="{{ teams[1].score if teams[1].score is not none else '' }}">
       </div>

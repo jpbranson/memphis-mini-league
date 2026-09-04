@@ -3,119 +3,87 @@
 {% block body %}
 <h1>{{ player.name }}</h1>
 <p class="sub">
-  {% if not player.active %}Inactive. {% endif %}
-  All time {{ all_time.wins }}-{{ all_time.losses }}
-  across {{ all_time.seasons_played }} season{{ '' if all_time.seasons_played == 1 else 's' }}.
+  {% if not player.active %}Retired. {% endif %}
+  {{ all_time.wins }}&ndash;{{ all_time.losses }} all time
+  {%- if all_time.seasons_played > 1 %}, {{ all_time.seasons_played }} seasons{% endif %}.
 </p>
 
 {% if not current %}
-  <div class="card"><p class="muted small">No games recorded for this player yet.</p></div>
+  <p class="muted">Not played yet.</p>
 {% else %}
 
 {% if summaries|length > 1 %}
-<div class="card">
-  <label for="season_id">Season</label>
-  <form method="get" action="/players/{{ player.id }}">
-    <select id="season_id" name="season_id" onchange="this.form.submit()"
-            style="width:100%;padding:11px;border-radius:9px;
-                   border:1px solid var(--line);background:var(--bg);color:var(--ink)">
+  <form method="get" action="/players/{{ player.id }}" style="margin-bottom:16px">
+    <select name="season_id" onchange="this.form.submit()" style="width:auto;padding:6px 8px">
       {% for s in summaries %}
         <option value="{{ s.season.id }}" {% if s.season.id == current.season.id %}selected{% endif %}>
-          {{ s.season.name }}
-        </option>
+          {{ s.season.name }}</option>
       {% endfor %}
     </select>
-    <noscript><button class="btn small" style="margin-top:8px" type="submit">Show</button></noscript>
+    <noscript><button class="btn small" type="submit">Go</button></noscript>
   </form>
-</div>
 {% endif %}
 
-<div class="card">
-  <h2>{{ current.season.name }}</h2>
-  <table class="board">
-    <tbody>
-      <tr><td>Rating</td><td class="num"><strong>{{ current.rating }}</strong></td></tr>
-      <tr><td>Record</td><td class="num">{{ current.wins }}-{{ current.losses }}</td></tr>
-      <tr><td>Games</td><td class="num">{{ current.games_played }}</td></tr>
-      <tr><td>Skill estimate (mu)</td><td class="num">{{ "%.2f"|format(current.mu) }}</td></tr>
-      <tr><td>Uncertainty (sigma)</td><td class="num">{{ "%.2f"|format(current.sigma) }}</td></tr>
-    </tbody>
-  </table>
+<div class="row" style="gap:26px; align-items:baseline; margin:6px 0 4px">
+  <span><span class="tally" style="font-size:2.6rem">{{ current.rating }}</span>
+    <span class="muted small">rating</span></span>
+  <span><span class="tally">{{ current.wins }}&ndash;{{ current.losses }}</span>
+    <span class="muted small">in {{ current.season.name }}</span></span>
 </div>
+<p class="muted small" style="margin-top:0">
+  skill {{ "%.2f"|format(current.mu) }},
+  uncertainty {{ "%.2f"|format(current.sigma) }},
+  {{ current.games_played }} game{{ "" if current.games_played == 1 else "s" }}
+</p>
 
 {% if points|length > 1 %}
-<div class="card">
-  <h2>Rating over time</h2>
-  <canvas id="ratingChart" height="220"></canvas>
-  <p class="muted small" style="margin-bottom:0">
-    The band is one standard deviation either side of the mean skill estimate.
-    It narrows as the league learns more about this player.
-  </p>
-</div>
+  <canvas id="ratingChart" height="200" style="margin-top:18px"></canvas>
 {% endif %}
 
-<div class="card">
-  <h2>What these numbers mean</h2>
-  <p class="small" style="margin-top:0">
-    <strong>Skill</strong> is the league's best guess at how good someone is.
-    Everyone starts at {{ "%.0f"|format(config.mu) }}. Win and it goes up, lose
-    and it goes down. Beating someone rated well above you moves it further than
-    beating someone you were expected to beat.
-  </p>
-  <p class="small">
-    <strong>Uncertainty</strong> is how sure the league is of that guess. It
-    starts at {{ "%.2f"|format(config.sigma) }} and shrinks with every game, so a
-    newcomer's skill moves in big jumps while a regular's barely shifts.
-  </p>
-  <p class="small">
-    <strong>Rating</strong> is the single number on the leaderboard. It is the
-    skill estimate minus {{ "%.0f"|format(config.conservative_k) }} times the
-    uncertainty, scaled up by {{ "%.0f"|format(config.display_scale) }}. For
-    {{ player.name }} that is
-    ({{ "%.2f"|format(current.mu) }} &minus; {{ "%.0f"|format(config.conservative_k) }}
-    &times; {{ "%.2f"|format(current.sigma) }})
-    &times; {{ "%.0f"|format(config.display_scale) }} =
-    <strong>{{ current.rating }}</strong>.
-  </p>
-  <p class="small muted" style="margin-bottom:0">
-    Subtracting the uncertainty is deliberate: it keeps someone who won a single
-    game from topping the table before the league knows much about them. Play
-    more games and the rating climbs towards the skill estimate on its own.
-    Only wins and losses count. Scores are recorded but do not affect either number.
-  </p>
-</div>
+<h2>Games</h2>
+{% if appearances %}
+  <ul class="plain">
+    {% for a in appearances %}
+      <li style="flex-direction:column; align-items:stretch">
+        <div class="row between">
+          <span><b>{{ "Won" if a.won else "Lost" }}</b>
+            {% if a.score_for is not none and a.score_against is not none %}
+              <span class="cond" style="font-weight:700">{{ a.score_for }}&ndash;{{ a.score_against }}</span>
+            {% endif %}
+            {% if a.mu_before is not none %}
+              <span class="muted small">{{ "%.1f"|format(a.mu_before) }}
+                &rarr; {{ "%.1f"|format(a.mu_after) }}</span>
+            {% endif %}
+          </span>
+          <a class="muted small" href="/sessions/{{ a.game.session_id }}">{{ a.session_date }}</a>
+        </div>
+        <div class="small muted" style="margin-top:2px">
+          with {{ a.teammates | map(attribute="name") | join(", ") or "nobody" }};
+          against {{ a.opponents | map(attribute="name") | join(", ") }}
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="muted small">None this season.</p>
+{% endif %}
 
-<div class="card">
-  <h2>Games</h2>
-  {% if appearances %}
-    <ul class="plain">
-      {% for a in appearances %}
-        <li style="flex-direction:column; align-items:stretch">
-          <div class="row between">
-            <span>
-              <strong>{{ "Won" if a.won else "Lost" }}</strong>
-              {% if a.score_for is not none and a.score_against is not none %}
-                <span class="muted">{{ a.score_for }}-{{ a.score_against }}</span>
-              {% endif %}
-            </span>
-            <span class="muted small">{{ a.session_date }}, round {{ a.round_number }}</span>
-          </div>
-          <div class="small muted" style="margin-top:3px">
-            With {{ a.teammates | map(attribute="name") | join(", ") or "nobody" }}
-            &middot; against {{ a.opponents | map(attribute="name") | join(", ") }}
-          </div>
-          {% if a.mu_before is not none %}
-            <div class="small muted">
-              Skill {{ "%.2f"|format(a.mu_before) }} &rarr; {{ "%.2f"|format(a.mu_after) }}
-            </div>
-          {% endif %}
-        </li>
-      {% endfor %}
-    </ul>
-  {% else %}
-    <p class="muted small">No games this season.</p>
-  {% endif %}
-</div>
+<h2>How the rating works</h2>
+<p class="small">
+  Skill starts at {{ "%.0f"|format(config.mu) }} and moves with every result.
+  Beating someone well above you moves it further than beating someone you were
+  meant to beat. Uncertainty starts at {{ "%.2f"|format(config.sigma) }} and
+  shrinks as you play, so a newcomer swings about and a regular barely moves.
+</p>
+<p class="small">
+  The rating is skill minus {{ "%.0f"|format(config.conservative_k) }} times the
+  uncertainty, times {{ "%.0f"|format(config.display_scale) }}. For
+  {{ player.name }}: ({{ "%.2f"|format(current.mu) }} &minus;
+  {{ "%.0f"|format(config.conservative_k) }} &times; {{ "%.2f"|format(current.sigma) }})
+  &times; {{ "%.0f"|format(config.display_scale) }} = <b>{{ current.rating }}</b>.
+  Subtracting the uncertainty is deliberate: one good morning should not put you
+  top. Only wins and losses count, never the scores.
+</p>
 
 {% if points|length > 1 %}
 <script src="/static/chart.min.js"></script>
@@ -127,60 +95,32 @@
     if (!el || !raw || typeof Chart === 'undefined') { return; }
     var points = JSON.parse(raw.textContent);
     var css = getComputedStyle(document.documentElement);
-    var ink = css.getPropertyValue('--ink').trim() || '#16191d';
-    var accent = css.getPropertyValue('--accent').trim() || '#1f6feb';
-    var muted = css.getPropertyValue('--muted').trim() || '#666e79';
+    var ink = css.getPropertyValue('--ink').trim() || '#14130f';
+    var faint = css.getPropertyValue('--faint').trim() || '#5f5b4e';
     new Chart(el, {
       type: 'line',
       data: {
-        labels: points.map(function (p) { return p.game === 0 ? 'start' : 'game ' + p.game; }),
+        labels: points.map(function (p) { return p.game === 0 ? '' : p.game; }),
         datasets: [
-          {
-            label: 'Rating',
-            data: points.map(function (p) { return p.rating; }),
-            borderColor: accent,
-            backgroundColor: accent,
-            tension: 0.25,
-            yAxisID: 'y'
-          },
-          {
-            label: 'Skill (mu)',
-            data: points.map(function (p) { return p.mu; }),
-            borderColor: muted,
-            borderDash: [5, 4],
-            pointRadius: 0,
-            tension: 0.25,
-            yAxisID: 'y1'
-          },
-          {
-            label: 'mu + sigma',
-            data: points.map(function (p) { return p.mu + p.sigma; }),
-            borderColor: 'transparent',
-            pointRadius: 0,
-            fill: '+1',
-            backgroundColor: 'rgba(128,128,128,0.15)',
-            yAxisID: 'y1'
-          },
-          {
-            label: 'mu - sigma',
-            data: points.map(function (p) { return p.mu - p.sigma; }),
-            borderColor: 'transparent',
-            pointRadius: 0,
-            yAxisID: 'y1'
-          }
+          { label: 'Rating', data: points.map(function (p) { return p.rating; }),
+            borderColor: ink, backgroundColor: ink, tension: 0, pointRadius: 2, yAxisID: 'y' },
+          { label: 'Skill', data: points.map(function (p) { return p.mu; }),
+            borderColor: faint, borderDash: [4, 3], pointRadius: 0, tension: 0, yAxisID: 'y1' },
+          { label: 'hi', data: points.map(function (p) { return p.mu + p.sigma; }),
+            borderColor: 'transparent', pointRadius: 0, fill: '+1',
+            backgroundColor: 'rgba(128,128,128,0.14)', yAxisID: 'y1' },
+          { label: 'lo', data: points.map(function (p) { return p.mu - p.sigma; }),
+            borderColor: 'transparent', pointRadius: 0, yAxisID: 'y1' }
         ]
       },
       options: {
-        responsive: true,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: { labels: { color: ink, filter: function (i) { return i.text.indexOf('sigma') === -1; } } }
-        },
+        responsive: true, interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { labels: { color: faint, boxWidth: 10,
+          filter: function (i) { return i.text !== 'hi' && i.text !== 'lo'; } } } },
         scales: {
-          x: { ticks: { color: muted } },
-          y: { position: 'left', ticks: { color: muted }, title: { display: true, text: 'Rating', color: muted } },
-          y1: { position: 'right', ticks: { color: muted }, grid: { drawOnChartArea: false },
-                title: { display: true, text: 'Skill', color: muted } }
+          x: { ticks: { color: faint }, grid: { display: false } },
+          y: { position: 'left', ticks: { color: faint }, grid: { color: 'rgba(128,128,128,.15)' } },
+          y1: { position: 'right', ticks: { color: faint }, grid: { drawOnChartArea: false } }
         }
       }
     });
