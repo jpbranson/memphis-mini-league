@@ -147,3 +147,58 @@ def move_session_to_season(
     if commit:
         db.commit()
     return session
+
+
+def save_pending_teams(
+    db: Session,
+    session_id: int,
+    assignment: dict[int, int],
+    *,
+    team_size: str = "",
+    max_on_field: str = "",
+    commit: bool = True,
+) -> LeagueSession:
+    """Remember the line-up chosen for the round that has not been played yet.
+
+    The organizer picks sides, pockets the phone, plays, and comes back. The
+    page is long gone by then, so the choice has to live on the server.
+    """
+    session = get_session(db, session_id)
+    session.pending_teams = {
+        "assignment": {str(pid): side for pid, side in sorted(assignment.items())},
+        "team_size": team_size,
+        "max_on_field": max_on_field,
+        "saved_at": utcnow().isoformat(),
+    }
+    db.flush()
+    if commit:
+        db.commit()
+    return session
+
+
+def load_pending_teams(db: Session, session_id: int) -> dict:
+    """The saved line-up, dropping anyone who has since left."""
+    session = get_session(db, session_id)
+    stored = session.pending_teams or {}
+    present = {p.id for p in checked_in_players(db, session_id)}
+    assignment = {
+        int(pid): side
+        for pid, side in (stored.get("assignment") or {}).items()
+        if int(pid) in present
+    }
+    return {
+        "assignment": assignment,
+        "team_size": stored.get("team_size") or "",
+        "max_on_field": stored.get("max_on_field") or "",
+    }
+
+
+def clear_pending_teams(db: Session, session_id: int, *, commit: bool = True) -> None:
+    """Called once the round has actually been recorded."""
+    session = db.get(LeagueSession, session_id)
+    if session is None or session.pending_teams is None:
+        return
+    session.pending_teams = None
+    db.flush()
+    if commit:
+        db.commit()

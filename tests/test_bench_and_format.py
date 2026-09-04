@@ -191,7 +191,7 @@ def test_rounds_played_is_shown_next_to_players(client, page_session, make_api_p
         data={f"assign_{ids[0]}": "0", f"assign_{ids[1]}": "1", "winner": "0"},
     )
     body = squash(text(client.get(f"/admin/session/{page_session}")))
-    assert "&times;1" in body or "�1" in body
+    assert "&times;1" in squash(body)
 
 
 def test_bad_format_input_is_reported(client, page_session, make_api_players):
@@ -477,3 +477,141 @@ def test_edit_page_uses_the_same_limit(client, page_session, make_api_players):
     r = client.post(f"/admin/games/{game_id}/edit", data=data, follow_redirects=False)
     assert r.status_code == 303
     assert stored_on_field(client, page_session) == 4
+
+
+# --- the line-up survives the phone locking --------------------------------------
+
+
+def test_teams_are_remembered_after_the_page_is_reloaded(
+    client, page_session, make_api_players
+):
+    """Pick sides, pocket the phone, play, come back. The page is long gone by
+    then, so the choice has to be waiting on the server."""
+    ids = make_api_players("A", "B", "C", "D")
+    check_in_all(client, page_session, ids)
+    picked = assignments_in(
+        text(client.post(f"/admin/session/{page_session}/balance", data={}))
+    )
+    assert len(picked) == 4
+
+    # A fresh load, as if the tab had been discarded and reopened.
+    reloaded = assignments_in(text(client.get(f"/admin/session/{page_session}")))
+    assert reloaded == picked
+
+
+def test_a_hand_edit_is_remembered_too(client, page_session, make_api_players):
+    a, b, c, d = make_api_players("A", "B", "C", "D")
+    check_in_all(client, page_session, [a, b, c, d])
+    # Moving a player fires the preview, which is where the save happens.
+    client.post(
+        f"/admin/session/{page_session}/preview",
+        data={f"assign_{a}": "0", f"assign_{b}": "0", f"assign_{c}": "1", f"assign_{d}": "1"},
+    )
+    reloaded = assignments_in(text(client.get(f"/admin/session/{page_session}")))
+    assert reloaded == {a: "0", b: "0", c: "1", d: "1"}
+
+
+def test_a_swap_is_remembered(client, page_session, make_api_players):
+    a, b, c, d = make_api_players("A", "B", "C", "D")
+    check_in_all(client, page_session, [a, b, c, d])
+    client.post(
+        f"/admin/session/{page_session}/swap",
+        data={
+            f"assign_{a}": "0", f"assign_{b}": "0",
+            f"assign_{c}": "1", f"assign_{d}": "1",
+            "swap_a": str(a), "swap_b": str(c),
+        },
+    )
+    reloaded = assignments_in(text(client.get(f"/admin/session/{page_session}")))
+    assert reloaded[a] == "1" and reloaded[c] == "0"
+
+
+def test_the_format_choice_is_remembered(client, page_session, make_api_players):
+    ids = make_api_players("A", "B", "C", "D", "E", "F")
+    check_in_all(client, page_session, ids)
+    client.post(
+        f"/admin/session/{page_session}/balance",
+        data={"team_size": "2", "max_on_field": "4"},
+    )
+    body = squash(text(client.get(f"/admin/session/{page_session}")))
+    assert 'name="team_size" value="2"' in body
+    assert 'name="max_on_field" value="4"' in body
+
+
+def test_recording_the_round_clears_the_line_up(client, page_session, make_api_players):
+    a, b = make_api_players("A", "B")
+    check_in_all(client, page_session, [a, b])
+    client.post(
+        f"/admin/session/{page_session}/preview",
+        data={f"assign_{a}": "0", f"assign_{b}": "1"},
+    )
+    r = client.post(
+        f"/admin/session/{page_session}/games",
+        data={f"assign_{a}": "0", f"assign_{b}": "1", "winner": "0"},
+    )
+    assert "Recorded round 1." in text(r)
+    # The next round starts from nobody, not from the round just played.
+    assert assignments_in(text(r)) == {}
+    assert assignments_in(text(client.get(f"/admin/session/{page_session}"))) == {}
+
+
+def test_someone_who_leaves_drops_out_of_the_saved_line_up(
+    client, page_session, make_api_players
+):
+    a, b, c, d = make_api_players("A", "B", "C", "D")
+    check_in_all(client, page_session, [a, b, c, d])
+    client.post(
+        f"/admin/session/{page_session}/preview",
+        data={f"assign_{a}": "0", f"assign_{b}": "0", f"assign_{c}": "1", f"assign_{d}": "1"},
+    )
+    client.post(f"/admin/session/{page_session}/checkout", data={"player_id": d})
+
+    reloaded = assignments_in(text(client.get(f"/admin/session/{page_session}")))
+    assert d not in reloaded
+    assert reloaded[a] == "0" and reloaded[c] == "1"
+
+
+def test_a_rejected_submission_still_keeps_what_was_typed(
+    client, page_session, make_api_players
+):
+    a, b = make_api_players("A", "B")
+    check_in_all(client, page_session, [a, b])
+    r = client.post(
+        f"/admin/session/{page_session}/games",
+        data={f"assign_{a}": "0", f"assign_{b}": "1"},  # no winner picked
+    )
+    assert r.status_code == 400
+    assert assignments_in(text(r)) == {a: "0", b: "1"}
+
+
+# --- deleting a round without a native dialog ------------------------------------
+
+
+def test_delete_does_not_rely_on_a_browser_dialog(client, page_session, make_api_players):
+    """hx-confirm calls window.confirm, which a phone browser can refuse to
+    show, leaving Delete looking dead."""
+    a, b = make_api_players("A", "B")
+    check_in_all(client, page_session, [a, b])
+    client.post(
+        f"/admin/session/{page_session}/games",
+        data={f"assign_{a}": "0", f"assign_{b}": "1", "winner": "0"},
+    )
+    body = text(client.get(f"/admin/session/{page_session}"))
+    assert 'hx-confirm="' not in body
+    assert "data-ask" in body and "Really delete" in body
+
+
+def test_delete_still_works_when_confirmed(client, page_session, make_api_players):
+    a, b = make_api_players("A", "B")
+    check_in_all(client, page_session, [a, b])
+    client.post(
+        f"/admin/session/{page_session}/games",
+        data={f"assign_{a}": "0", f"assign_{b}": "1", "winner": "0"},
+    )
+    board = text(client.get(f"/admin/session/{page_session}"))
+    game_id = int(re.search(r"/admin/games/(\d+)/delete", board).group(1))
+
+    r = client.post(f"/admin/games/{game_id}/delete")
+    assert r.status_code == 200
+    assert "Round deleted" in text(r)
+    assert "Rounds (0)" in text(r)

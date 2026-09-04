@@ -159,6 +159,8 @@
     padding: 14px 16px; overflow-y: auto;
   }
   .htmx-request { opacity: .55; }
+  .confirm { display: inline-flex; gap: 6px; align-items: center; }
+  .confirm [data-panel] { display: inline-flex; gap: 6px; }
 </style>
 </head>
 <body>
@@ -215,6 +217,24 @@
       if (status >= 400 && status < 500) {
         event.detail.shouldSwap = true;
         event.detail.isError = false;
+      }
+    });
+
+    // Confirming in the page. hx-confirm calls window.confirm, which a phone
+    // browser may refuse to show, leaving a dead button; this cannot be
+    // suppressed and works with the screen locked and woken.
+    document.body.addEventListener('click', function (event) {
+      var ask = event.target.closest('[data-ask]');
+      if (ask) {
+        ask.hidden = true;
+        ask.parentElement.querySelector('[data-panel]').hidden = false;
+        return;
+      }
+      var cancel = event.target.closest('[data-cancel]');
+      if (cancel) {
+        var wrap = cancel.closest('.confirm');
+        wrap.querySelector('[data-panel]').hidden = true;
+        wrap.querySelector('[data-ask]').hidden = false;
       }
     });
 

@@ -69,6 +69,10 @@ class LeagueSession(Base):
     date: Mapped[date]
     notes: Mapped[str | None]
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    # Teams picked but not yet played. Held here rather than in the page so a
+    # phone that locks, sleeps or drops the tab does not lose the line-up
+    # between choosing sides and coming back with the score.
+    pending_teams: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
     season: Mapped[Season] = relationship(back_populates="sessions")
     players: Mapped[list[SessionPlayer]] = relationship(

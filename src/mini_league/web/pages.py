@@ -171,7 +171,11 @@ def board_context(
     present = [sp for sp in roster if sp.checked_out_at is None]
     away = [sp for sp in roster if sp.checked_out_at is not None]
     all_games = games_service.session_games(db, session.id, include_deleted=True)
-    assignment = assignment or {}
+    # An explicit assignment wins (a rejected submission keeps what was typed);
+    # otherwise fall back to whatever was saved before the phone locked.
+    saved = sessions_service.load_pending_teams(db, session.id)
+    if assignment is None:
+        assignment = saved["assignment"]
     return {
         "session": session,
         "season": session.season,
@@ -185,8 +189,8 @@ def board_context(
         "rating_of": rating_lookup(db, session.season_id),
         "assignment": assignment,
         "matchup": matchup(db, session, assignment, DEFAULT_MAX_ON_FIELD),
-        "team_size": "",
-        "max_on_field": str(DEFAULT_MAX_ON_FIELD),
+        "team_size": saved["team_size"],
+        "max_on_field": saved["max_on_field"] or str(DEFAULT_MAX_ON_FIELD),
         "benched": (
             [sp for sp in present if sp.player_id not in assignment] if assignment else []
         ),
@@ -648,6 +652,9 @@ async def balance_teams(request: Request, session_id: int, db: Session = Depends
     assignment = {
         pid: index for index, roster in enumerate(split.teams) for pid in roster
     }
+    sessions_service.save_pending_teams(
+        db, session_id, assignment, team_size=team_size_raw, max_on_field=on_field_raw
+    )
     return render_record_card(
         request,
         db,
@@ -689,6 +696,9 @@ async def swap_players(request: Request, session_id: int, db: Session = Depends(
         return rerender("Pick one player from Team A and one from Team B.")
 
     assignment[first], assignment[second] = 1, 0
+    sessions_service.save_pending_teams(
+        db, session_id, assignment, team_size=team_size_raw, max_on_field=on_field_raw
+    )
     return rerender()
 
 
@@ -697,15 +707,22 @@ async def preview_matchup(request: Request, session_id: int, db: Session = Depen
     """Recompute the team strengths as the organizer moves players around."""
     session = load_session(db, session_id)
     form = await request.form()
+    assignment = parse_assignments(form)
+    # This runs on every change to a radio, so it is the natural place to keep
+    # the saved line-up in step with what the organizer has actually set.
+    sessions_service.save_pending_teams(
+        db,
+        session_id,
+        assignment,
+        team_size=str(form.get("team_size") or ""),
+        max_on_field=str(form.get("max_on_field") or ""),
+    )
     return templates.TemplateResponse(
         request,
         "partials/balance_panel.html",
         {
             "matchup": matchup(
-                db,
-                session,
-                parse_assignments(form),
-                safe_optional_int(form.get("max_on_field")),
+                db, session, assignment, safe_optional_int(form.get("max_on_field"))
             )
         },
     )
@@ -775,7 +792,14 @@ async def record_result(request: Request, session_id: int, db: Session = Depends
             request, db, session, error=str(exc), assignment=assignments, status_code=400
         )
 
-    return render_board(request, db, session, notice=f"Recorded round {game.round_number}.")
+    sessions_service.clear_pending_teams(db, session_id)
+    return render_board(
+        request,
+        db,
+        session,
+        notice=f"Recorded round {game.round_number}.",
+        assignment={},
+    )
 
 
 @router.post("/admin/games/{game_id}/delete", response_class=HTMLResponse)
