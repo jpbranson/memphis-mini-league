@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from ..db import make_engine, make_session_factory
 from ..settings import get_settings
 from . import api, pages
+from .deps import STATIC_DIR
 
 
 def create_app(database_url: str | None = None, *, create_tables: bool = False) -> FastAPI:
@@ -30,6 +32,7 @@ def create_app(database_url: str | None = None, *, create_tables: bool = False) 
     )
     app.state.engine = engine
     app.state.session_factory = make_session_factory(engine)
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     app.include_router(api.router)
     app.include_router(pages.router)
     return app

@@ -76,13 +76,44 @@ def test_search_finds_an_existing_player(client, page_session, make_api_players)
 
 def test_search_offers_to_create_when_nothing_matches(client, page_session):
     r = client.get(f"/admin/session/{page_session}/search", params={"q": "Priya"})
-    assert "No existing player matches" in text(r)
+    assert 'No player matches "Priya"' in text(r)
     assert 'Create new player "Priya"' in text(r)
 
 
-def test_empty_search_renders_nothing(client, page_session):
+def test_empty_search_restores_the_full_check_in_list(client, page_session, make_api_players):
+    make_api_players("Ada", "Priya")
     r = client.get(f"/admin/session/{page_session}/search", params={"q": ""})
-    assert text(r).strip() == ""
+    body = text(r)
+    assert "Ada" in body and "Priya" in body
+    # With no query there is nothing to create, so no create button.
+    assert "Create new player" not in body
+
+
+def test_players_are_checkinable_without_searching(client, page_session, make_api_players):
+    """Report: 'I am not able to check players in.' The board must offer a
+    tappable list, not only a search box."""
+    ada, ben = make_api_players("Ada", "Ben")
+    body = text(client.get(f"/admin/session/{page_session}"))
+    assert "Check in a player" in body
+    for pid in (ada, ben):
+        assert f'"player_id": {pid}' in body
+    assert body.count('hx-post="/admin/session/%d/checkin"' % page_session) >= 2
+
+
+def test_checked_in_players_leave_the_check_in_list(client, page_session, make_api_players):
+    ada, ben = make_api_players("Ada", "Ben")
+    r = client.post(f"/admin/session/{page_session}/checkin", data={"player_id": ada})
+    body = text(r)
+    check_in_list = body.split('id="checkin-list"')[1]
+    assert "Ben" in check_in_list
+    assert "Ada" not in check_in_list.split("Record a result")[0]
+
+
+def test_search_filters_the_check_in_list(client, page_session, make_api_players):
+    make_api_players("Ada", "Priya")
+    body = text(client.get(f"/admin/session/{page_session}/search", params={"q": "Ada"}))
+    assert "Ada" in body
+    assert "Priya" not in body
 
 
 def test_add_player_checks_them_in(client, page_session):
@@ -100,6 +131,9 @@ def test_add_near_duplicate_shows_the_warning_instead(client, page_session):
     assert "That name looks like someone already here" in body
     assert "Check in Justin M." in body
     assert 'Create "Justin" anyway' in body
+    # The warning is rendered inside the board, so the roster stays in view.
+    assert "Checked in (1)" in body
+    assert "Check in a player" in body
 
 
 def test_forcing_past_the_duplicate_warning_works(client, page_session):
@@ -215,7 +249,7 @@ def test_score_disagreeing_with_the_winner_is_rejected(client, page_session, mak
         },
     )
     assert r.status_code == 400
-    assert "lower score" in text(r)
+    assert "marked as the winner but scored" in text(r)
 
 
 def test_uneven_teams_via_players_on_field(client, page_session, make_api_players):
@@ -315,3 +349,75 @@ def test_board_shows_the_htmx_targets(client, page_session, make_api_players):
     assert 'id="board"' in body
     assert 'hx-target="#board"' in body
     assert "htmx.min.js" in body
+
+
+def test_htmx_is_served_by_this_app_not_a_cdn(client):
+    """A blocked or unreachable CDN would make every button silently dead."""
+    body = text(client.get("/admin"))
+    assert 'src="/static/htmx.min.js"' in body
+    assert "cdnjs" not in body and "cdn." not in body
+
+    asset = client.get("/static/htmx.min.js")
+    assert asset.status_code == 200
+    assert len(asset.content) > 10_000
+
+
+def test_validation_errors_are_swapped_in_despite_being_4xx(client):
+    """htmx drops 4xx bodies by default, which would hide every error message."""
+    body = text(client.get("/admin"))
+    assert "htmx:beforeSwap" in body
+    assert "shouldSwap = true" in body
+    # And a guard so a failure to load htmx is visible rather than silent.
+    assert "failed to load" in body
+
+
+def test_edit_rejects_a_winner_that_contradicts_the_scores(
+    client, page_session, make_api_players
+):
+    """Report: 'I tried to edit past games and it wouldn't let me.' Flipping the
+    winner without swapping the scores is refused, and must say why."""
+    ada, ben = make_api_players("Ada", "Ben")
+    check_in_all(client, page_session, [ada, ben])
+    client.post(
+        f"/admin/session/{page_session}/games",
+        data={
+            f"assign_{ada}": "0",
+            f"assign_{ben}": "1",
+            "winner": "0",
+            "score_0": "5",
+            "score_1": "3",
+        },
+    )
+    board = client.get(f"/admin/session/{page_session}")
+    game_id = int(re.search(r"/admin/games/(\d+)/edit", text(board)).group(1))
+
+    r = client.post(
+        f"/admin/games/{game_id}/edit",
+        data={
+            f"assign_{ada}": "0",
+            f"assign_{ben}": "1",
+            "winner": "1",  # flipped, but the scores still say A won
+            "score_0": "5",
+            "score_1": "3",
+        },
+    )
+    assert r.status_code == 400
+    body = text(r)
+    assert "Team B is marked as the winner but scored 3, while Team A scored 5" in body
+    assert "Change the winner, or swap the scores" in body
+
+    # Swapping the scores as instructed lets the edit through.
+    r = client.post(
+        f"/admin/games/{game_id}/edit",
+        data={
+            f"assign_{ada}": "0",
+            f"assign_{ben}": "1",
+            "winner": "1",
+            "score_0": "3",
+            "score_1": "5",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    teams = client.get(f"/api/sessions/{page_session}").json()["games"][0]["teams"]
+    assert next(t for t in teams if t["rank"] == 1)["player_ids"] == [ben]

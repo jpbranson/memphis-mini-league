@@ -1,0 +1,34 @@
+{# The searchable check-in list. Rendered inline on load and swapped in by the
+   search box, so checking someone in never requires typing first. #}
+{% if candidates %}
+  <ul class="plain scroll">
+    {% for entry in candidates %}
+      <li>
+        <span>
+          {{ entry.player.name }}
+          {% if not entry.player.active %}<span class="muted small">inactive</span>{% endif %}
+          {% if entry.present %}<span class="muted small">already checked in</span>{% endif %}
+        </span>
+        {% if not entry.present %}
+          <button class="btn small"
+                  hx-post="/admin/session/{{ session.id }}/checkin"
+                  hx-vals='{"player_id": {{ entry.player.id }}}'
+                  hx-target="#board">Check in</button>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+{% elif query %}
+  <p class="muted small">No player matches "{{ query }}".</p>
+{% else %}
+  <p class="muted small">Nobody else to check in. Type a name above to add someone new.</p>
+{% endif %}
+
+{% if query %}
+  <form hx-post="/admin/session/{{ session.id }}/players"
+        hx-target="#board"
+        style="margin-top:10px">
+    <input type="hidden" name="name" value="{{ query }}">
+    <button class="btn" type="submit">Create new player "{{ query }}"</button>
+  </form>
+{% endif %}

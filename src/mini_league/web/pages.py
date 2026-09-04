@@ -25,12 +25,37 @@ from .deps import get_db, templates
 router = APIRouter()
 
 
+def checkin_candidates(db: Session, session: LeagueSession, query: str = "") -> list[dict]:
+    """Players the organizer can tap to check in.
+
+    With no query this is every active player who is not already present, so
+    check-in never requires typing. With a query it is the fuzzy search, which
+    also reaches inactive players (design doc section 6.1).
+    """
+    roster = {sp.player_id: sp for sp in sessions_service.session_roster(db, session.id)}
+
+    def is_present(player_id: int) -> bool:
+        entry = roster.get(player_id)
+        return entry is not None and entry.checked_out_at is None
+
+    query = query.strip()
+    if query:
+        players = [m.player for m in players_service.search_players(db, query)]
+    else:
+        players = [
+            p for p in players_service.list_players(db) if not is_present(p.id)
+        ]
+    return [{"player": p, "present": is_present(p.id)} for p in players]
+
+
 def board_context(
     db: Session,
     session: LeagueSession,
     *,
     error: str | None = None,
     notice: str | None = None,
+    duplicate_name: str | None = None,
+    duplicate_matches: list | None = None,
 ) -> dict:
     roster = sessions_service.session_roster(db, session.id)
     present = [sp for sp in roster if sp.checked_out_at is None]
@@ -41,11 +66,15 @@ def board_context(
         "season": session.season,
         "present": present,
         "away": away,
+        "candidates": checkin_candidates(db, session),
+        "query": "",
         "games": [g for g in all_games if g.deleted_at is None],
         "deleted_games": [g for g in all_games if g.deleted_at is not None],
         "player_name": lambda pid: db.get(Player, pid).name,
         "error": error,
         "notice": notice,
+        "duplicate_name": duplicate_name,
+        "duplicate_matches": duplicate_matches or [],
     }
 
 
@@ -56,9 +85,18 @@ def render_board(
     *,
     error: str | None = None,
     notice: str | None = None,
+    duplicate_name: str | None = None,
+    duplicate_matches: list | None = None,
     status_code: int = 200,
 ) -> HTMLResponse:
-    ctx = board_context(db, session, error=error, notice=notice)
+    ctx = board_context(
+        db,
+        session,
+        error=error,
+        notice=notice,
+        duplicate_name=duplicate_name,
+        duplicate_matches=duplicate_matches,
+    )
     ctx["request"] = request
     return templates.TemplateResponse(
         request, "partials/board.html", ctx, status_code=status_code
@@ -162,18 +200,15 @@ def session_detail(request: Request, session_id: int, db: Session = Depends(get_
 def player_search(
     request: Request, session_id: int, q: str = "", db: Session = Depends(get_db)
 ):
-    """Live fuzzy search shown before an organizer creates a new player."""
+    """Filter the check-in list. Empty query restores the full list."""
     session = load_session(db, session_id)
-    checked_in_ids = {sp.player_id for sp in sessions_service.session_roster(db, session.id)}
-    matches = players_service.search_players(db, q)
     return templates.TemplateResponse(
         request,
-        "partials/search_results.html",
+        "partials/checkin_list.html",
         {
             "session": session,
-            "matches": matches,
+            "candidates": checkin_candidates(db, session, q),
             "query": q.strip(),
-            "checked_in_ids": checked_in_ids,
         },
     )
 
@@ -221,10 +256,13 @@ def add_player(
     try:
         player = players_service.create_player(db, name, force=force)
     except players_service.DuplicatePlayerError as exc:
-        return templates.TemplateResponse(
+        # Rendered inside the board so the organizer keeps the roster in view.
+        return render_board(
             request,
-            "partials/duplicate_warning.html",
-            {"session": session, "name": name.strip(), "matches": exc.matches},
+            db,
+            session,
+            duplicate_name=name.strip(),
+            duplicate_matches=exc.matches,
             status_code=409,
         )
     except ValueError as exc:

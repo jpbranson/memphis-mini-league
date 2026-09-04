@@ -4,7 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Mini League{% endblock %}</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/htmx/1.9.12/htmx.min.js"></script>
+{# htmx is served from this app, not a CDN: at a field the phone may reach the
+   server without reaching the wider internet, and a missing htmx makes every
+   button silently dead. #}
+<script src="/static/htmx.min.js"></script>
 <style>
   :root {
     --bg: #f6f7f9; --card: #fff; --ink: #16191d; --muted: #666e79;
@@ -64,6 +67,7 @@
     gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line);
   }
   ul.plain li:last-child { border-bottom: 0; }
+  .scroll { max-height: 320px; overflow-y: auto; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
   .seg label {
     margin: 0; padding: 9px 13px; font-size: .9rem; font-weight: 600; cursor: pointer;
@@ -92,5 +96,26 @@
 <main>
   {% block body %}{% endblock %}
 </main>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    if (typeof window.htmx === 'undefined') {
+      var warning = document.createElement('div');
+      warning.className = 'flash error';
+      warning.textContent =
+        'Interactive features failed to load, so buttons will not respond. Reload the page.';
+      document.querySelector('main').prepend(warning);
+      return;
+    }
+    // htmx ignores the body of a 4xx response by default, which would silently
+    // swallow every validation message the server renders. Swap them in.
+    document.body.addEventListener('htmx:beforeSwap', function (event) {
+      var status = event.detail.xhr.status;
+      if (status >= 400 && status < 500) {
+        event.detail.shouldSwap = true;
+        event.detail.isError = false;
+      }
+    });
+  });
+</script>
 </body>
 </html>

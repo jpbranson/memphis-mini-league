@@ -1,11 +1,11 @@
-{# Shown instead of creating a player when the name looks like an existing one. #}
+{# Shown inside the board when a new name looks like an existing player. #}
 <div class="card" style="border-color: var(--danger)">
   <h2>That name looks like someone already here</h2>
   <p class="small">
-    Check in the existing player instead, or create "{{ name }}" as a separate person.
+    Check in the existing player instead, or create "{{ duplicate_name }}" as a separate person.
   </p>
   <ul class="plain">
-    {% for m in matches %}
+    {% for m in duplicate_matches %}
       <li>
         <span>
           {{ m.player.name }}
@@ -19,8 +19,8 @@
     {% endfor %}
   </ul>
   <form hx-post="/admin/session/{{ session.id }}/players" hx-target="#board" style="margin-top:10px">
-    <input type="hidden" name="name" value="{{ name }}">
+    <input type="hidden" name="name" value="{{ duplicate_name }}">
     <input type="hidden" name="force" value="true">
-    <button class="btn danger" type="submit">Create "{{ name }}" anyway</button>
+    <button class="btn danger" type="submit">Create "{{ duplicate_name }}" anyway</button>
   </form>
 </div>

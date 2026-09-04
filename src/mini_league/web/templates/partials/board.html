@@ -4,6 +4,10 @@
 {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
 {% if notice %}<div class="flash ok">{{ notice }}</div>{% endif %}
 
+{% if duplicate_name %}
+  {% include "partials/duplicate_warning.html" %}
+{% endif %}
+
 <div class="card">
   <h2>Checked in ({{ present|length }})</h2>
   {% if present %}
@@ -19,7 +23,7 @@
       {% endfor %}
     </ul>
   {% else %}
-    <p class="muted small">Nobody checked in yet. Search below to add players.</p>
+    <p class="muted small">Nobody checked in yet. Tap a name below.</p>
   {% endif %}
 
   {% if away %}
@@ -39,14 +43,16 @@
 </div>
 
 <div class="card">
-  <h2>Add a player</h2>
-  <label for="q">Search existing players first</label>
-  <input type="text" id="q" name="q" placeholder="Start typing a name"
+  <h2>Check in a player</h2>
+  <label for="q">Tap a name, or search to filter and add someone new</label>
+  <input type="text" id="q" name="q" placeholder="Search or add a name"
          autocomplete="off"
          hx-get="/admin/session/{{ session.id }}/search"
          hx-trigger="keyup changed delay:200ms, search"
-         hx-target="#search-results">
-  <div id="search-results"></div>
+         hx-target="#checkin-list">
+  <div id="checkin-list">
+    {% include "partials/checkin_list.html" %}
+  </div>
 </div>
 
 {% if present|length >= 2 %}

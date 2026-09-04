@@ -190,9 +190,9 @@ def test_deleted_round_number_is_reused(db, league_session, make_players):
 
 def test_score_must_agree_with_the_winner(db, league_session, make_players):
     a, b = make_players(2)
-    with pytest.raises(ValueError, match="lower score"):
+    with pytest.raises(ValueError, match="marked as the winner but scored"):
         record_game(db, league_session.id, [TeamInput([a.id], 1, 2), TeamInput([b.id], 2, 5)])
-    with pytest.raises(ValueError, match="tied"):
+    with pytest.raises(ValueError, match="cannot end in a tie"):
         record_game(db, league_session.id, [TeamInput([a.id], 1, 5), TeamInput([b.id], 2, 5)])
     with pytest.raises(ValueError, match="negative"):
         record_game(db, league_session.id, [TeamInput([a.id], 1, -1), TeamInput([b.id], 2, 5)])

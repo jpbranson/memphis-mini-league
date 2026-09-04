@@ -80,14 +80,24 @@ def _validate_team_inputs(
         if team.score is not None and team.score < 0:
             raise ValueError(f"team {i} has a negative score")
 
-    scored = [t for t in teams if t.score is not None]
-    if len(scored) == len(teams) and len(teams) == 2:
-        winner, loser = sorted(teams, key=lambda t: t.rank)
-        if winner.score is not None and loser.score is not None:
-            if winner.score < loser.score:
-                raise ValueError("the winning team cannot have the lower score")
-            if winner.score == loser.score:
-                raise ValueError("scores cannot be tied")
+    # Cross-check the winner against the scores, naming the discrepancy so the
+    # organizer can see which of the two they got wrong.
+    if len(teams) == 2 and all(t.score is not None for t in teams):
+        letters = ("A", "B")
+        winner_index = min(range(2), key=lambda i: teams[i].rank)
+        loser_index = 1 - winner_index
+        winner, loser = teams[winner_index], teams[loser_index]
+        if winner.score == loser.score:
+            raise ValueError(
+                f"Both teams are down as scoring {winner.score}. "
+                "Games cannot end in a tie, so one score needs to change."
+            )
+        if winner.score < loser.score:
+            raise ValueError(
+                f"Team {letters[winner_index]} is marked as the winner but scored "
+                f"{winner.score}, while Team {letters[loser_index]} scored {loser.score}. "
+                "Change the winner, or swap the scores."
+            )
 
     players = {p.id: p for p in db.scalars(select(Player).where(Player.id.in_(all_ids)))}
     missing = sorted(set(all_ids) - players.keys())
