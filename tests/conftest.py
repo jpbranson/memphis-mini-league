@@ -57,16 +57,50 @@ def make_players(db: Session):
 # --- web fixtures ---------------------------------------------------------------
 
 
-@pytest.fixture
-def client(tmp_path):
-    """TestClient over a throwaway file-backed database."""
+ORGANIZER_PASSWORD = "test-password"
+
+
+def build_client(tmp_path, *, password: str | None = ORGANIZER_PASSWORD, sign_in=True):
     from fastapi.testclient import TestClient
 
     from mini_league.web import create_app
 
     url = f"sqlite:///{(tmp_path / 'web.db').as_posix()}"
-    app = create_app(url, create_tables=True)
-    with TestClient(app) as test_client:
+    app = create_app(
+        url, create_tables=True, organizer_password=password, secret_key="test-secret"
+    )
+    client = TestClient(app)
+    if sign_in and password:
+        response = client.post(
+            "/login", data={"password": password, "next": "/admin"}, follow_redirects=False
+        )
+        assert response.status_code == 303, response.text
+    return app, client
+
+
+@pytest.fixture
+def client(tmp_path):
+    """TestClient over a throwaway database, already signed in as the organizer."""
+    app, test_client = build_client(tmp_path)
+    with test_client:
+        yield test_client
+    app.state.engine.dispose()
+
+
+@pytest.fixture
+def visitor(tmp_path):
+    """A client that has not signed in: sees only the public pages."""
+    app, test_client = build_client(tmp_path, sign_in=False)
+    with test_client:
+        yield test_client
+    app.state.engine.dispose()
+
+
+@pytest.fixture
+def unconfigured(tmp_path):
+    """An instance with no organizer password set at all."""
+    app, test_client = build_client(tmp_path, password=None, sign_in=False)
+    with test_client:
         yield test_client
     app.state.engine.dispose()
 

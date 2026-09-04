@@ -83,3 +83,31 @@ def create_season(
     if commit:
         db.commit()
     return season
+
+
+def rename_season(db: Session, season_id: int, name: str, *, commit: bool = True) -> Season:
+    """Rename a season. Nothing else moves; sessions point at the id."""
+    name = name.strip()
+    if not name:
+        raise ValueError("season name is required")
+    season = db.get(Season, season_id)
+    if season is None:
+        raise LookupError(f"season {season_id} does not exist")
+
+    clash = db.scalars(
+        select(Season).where(Season.name == name, Season.id != season_id)
+    ).first()
+    if clash is not None:
+        raise ValueError(f"a season named {name!r} already exists")
+
+    from .audit import log_action
+
+    before = season.name
+    season.name = name
+    db.flush()
+    log_action(
+        db, "rename_season", {"season_id": season_id, "before": before, "after": name}
+    )
+    if commit:
+        db.commit()
+    return season

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Settings — Mini League{% endblock %}
+{% block body %}
+<div class="row between">
+  <div>
+    <h1>Settings</h1>
+    <p class="sub">What the rating system is currently using.</p>
+  </div>
+  <a class="btn small" href="/admin/audit">Audit log</a>
+</div>
+
+{% if notice %}<div class="flash ok">{{ notice }}</div>{% endif %}
+
+{% if not auth_configured %}
+  <div class="flash error">
+    No organizer password is set. Anyone who can reach this app can change results.
+  </div>
+{% endif %}
+
+<div class="card">
+  <h2>Rating</h2>
+  <table class="board">
+    <thead>
+      <tr><th>Setting</th><th class="num">In use</th><th class="num">Default</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Starting skill (mu)</td>
+        <td class="num">{{ "%.2f"|format(rating.mu) }}</td>
+        <td class="num muted">{{ "%.2f"|format(defaults.mu) }}</td></tr>
+      <tr><td>Starting uncertainty (sigma)</td>
+        <td class="num">{{ "%.2f"|format(rating.sigma) }}</td>
+        <td class="num muted">{{ "%.2f"|format(defaults.sigma) }}</td></tr>
+      <tr><td>Skill to win chance (beta)</td>
+        <td class="num">{{ "%.2f"|format(rating.beta) }}</td>
+        <td class="num muted">{{ "%.2f"|format(defaults.beta) }}</td></tr>
+      <tr><td>Drift per game (tau)</td>
+        <td class="num">{{ "%.3f"|format(rating.tau) }}</td>
+        <td class="num muted">{{ "%.3f"|format(defaults.tau) }}</td></tr>
+      <tr><td>Draw chance</td>
+        <td class="num">{{ "%.2f"|format(rating.draw_probability) }}</td>
+        <td class="num muted">{{ "%.2f"|format(defaults.draw_probability) }}</td></tr>
+      <tr><td>Uncertainty subtracted</td>
+        <td class="num">{{ "%.1f"|format(rating.conservative_k) }}</td>
+        <td class="num muted">{{ "%.1f"|format(defaults.conservative_k) }}</td></tr>
+      <tr><td>Display scale</td>
+        <td class="num">{{ "%.0f"|format(rating.display_scale) }}</td>
+        <td class="num muted">{{ "%.0f"|format(defaults.display_scale) }}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Team generation</h2>
+  <table class="board">
+    <thead>
+      <tr><th>Setting</th><th class="num">In use</th><th class="num">Default</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Balance weight</td>
+        <td class="num">{{ "%.2f"|format(team_gen.w_balance) }}</td>
+        <td class="num muted">{{ "%.2f"|format(team_defaults.w_balance) }}</td></tr>
+      <tr><td>Variety weight</td>
+        <td class="num">{{ "%.2f"|format(team_gen.w_variety) }}</td>
+        <td class="num muted">{{ "%.2f"|format(team_defaults.w_variety) }}</td></tr>
+      <tr><td>Splits chosen between</td>
+        <td class="num">{{ team_gen.top_n }}</td>
+        <td class="num muted">{{ team_defaults.top_n }}</td></tr>
+    </tbody>
+  </table>
+  <p class="muted small" style="margin-bottom:0">
+    These live in the settings file. Any of them can be overridden with an
+    environment variable, for example MINI_LEAGUE_BETA, then restart. Changing a
+    rating setting only takes effect on past games once you replay them below.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Replay every rating</h2>
+  <p class="muted small" style="margin-top:0">
+    Recomputes all {{ seasons }} season{{ "" if seasons == 1 else "s" }} from the
+    recorded games. Safe to run at any time. Use it after changing a setting
+    above, or if you ever suspect the standings have drifted.
+  </p>
+  <form method="post" action="/admin/settings/recompute">
+    <button class="btn primary" type="submit">Replay every rating</button>
+  </form>
+</div>
+{% endblock %}

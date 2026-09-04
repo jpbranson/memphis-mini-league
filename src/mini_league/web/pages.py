@@ -30,7 +30,9 @@ from .. import sessions as sessions_service
 from .. import teams as teams_service
 from ..models import LeagueSession, Player
 from ..ratings import display_rating
-from ..settings import DEFAULT_RATING_CONFIG, TeamGenConfig
+from ..recompute import recompute_all_ratings
+from ..settings import DEFAULT_RATING_CONFIG, RatingConfig, TeamGenConfig
+from . import auth
 from .deps import get_db, templates
 
 router = APIRouter()
@@ -1056,3 +1058,177 @@ def undo_audit(request: Request, audit_id: int, db: Session = Depends(get_db)):
         "admin_audit.html",
         audit_context(db, notice="Merge undone. Ratings replayed."),
     )
+
+
+# --- sign in (milestone 7) -------------------------------------------------------
+
+
+@router.get("/login", response_class=HTMLResponse)
+def login_form(request: Request, next: str = "/admin"):
+    destination = auth.safe_next(next)
+    if auth.is_signed_in(request):
+        return RedirectResponse(destination, status_code=303)
+    return templates.TemplateResponse(
+        request,
+        "login.html",
+        {"next": destination, "configured": request.app.state.auth.configured},
+    )
+
+
+@router.post("/login")
+def sign_in(
+    request: Request,
+    password: str = Form(default=""),
+    next: str = Form(default="/admin"),
+):
+    config = request.app.state.auth
+    if not auth.check_password(config, password):
+        # Deliberately vague: a wrong password should not say whether one is set.
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {
+                "next": next or "/admin",
+                "configured": config.configured,
+                "error": "That password was not right.",
+            },
+            status_code=401,
+        )
+    auth.sign_in(request)
+    return RedirectResponse(auth.safe_next(next), status_code=303)
+
+
+@router.post("/logout")
+def sign_out(request: Request):
+    auth.sign_out(request)
+    return RedirectResponse("/", status_code=303)
+
+
+# --- public session history (design doc section 7) -------------------------------
+
+
+@router.get("/sessions", response_class=HTMLResponse)
+def sessions_page(
+    request: Request, season_id: int | None = None, db: Session = Depends(get_db)
+):
+    all_seasons = seasons_service.list_seasons(db)
+    season = next((s for s in all_seasons if s.id == season_id), None)
+    listed = sessions_service.list_sessions(
+        db, season_id=season.id if season else None
+    )
+    rows = [
+        {
+            "session": session,
+            "players": len(sessions_service.session_roster(db, session.id)),
+            "games": len(games_service.session_games(db, session.id)),
+            "season": session.season,
+        }
+        for session in listed
+    ]
+    return templates.TemplateResponse(
+        request,
+        "sessions.html",
+        {"rows": rows, "seasons": all_seasons, "season": season},
+    )
+
+
+@router.get("/sessions/{session_id}", response_class=HTMLResponse)
+def session_history_page(request: Request, session_id: int, db: Session = Depends(get_db)):
+    # Named for the page, not the data: `session_history` is already the helper
+    # that feeds this session's pairings to the team balancer.
+    session = load_session(db, session_id)
+    games = sorted(
+        games_service.session_games(db, session_id),
+        key=lambda g: (g.round_number, g.id),
+    )
+    return templates.TemplateResponse(
+        request,
+        "session_history.html",
+        {
+            "session": session,
+            "season": session.season,
+            "games": games,
+            "roster": sessions_service.session_roster(db, session_id),
+            "player_name": lambda pid: db.get(Player, pid).name,
+            "rating_of": rating_lookup(db, session.season_id),
+        },
+    )
+
+
+# --- seasons (design doc section 7) ----------------------------------------------
+
+
+@router.get("/admin/seasons", response_class=HTMLResponse)
+def seasons_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    error: str | None = None,
+    notice: str | None = None,
+):
+    seasons = seasons_service.list_seasons(db)
+    return templates.TemplateResponse(
+        request,
+        "admin_seasons.html",
+        {
+            "seasons": [
+                {
+                    "season": season,
+                    "sessions": len(sessions_service.list_sessions(db, season_id=season.id)),
+                    "rated": len(leaderboard_service.leaderboard(db, season.id)),
+                }
+                for season in seasons
+            ],
+            "current": seasons_service.current_season(db),
+            "today": date_type.today(),
+            "error": error,
+            "notice": notice,
+        },
+    )
+
+
+@router.post("/admin/seasons/{season_id}/rename")
+def rename_season(
+    request: Request,
+    season_id: int,
+    name: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    try:
+        seasons_service.rename_season(db, season_id, name)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        return seasons_page(request, db, error=str(exc))
+    return RedirectResponse("/admin/seasons", status_code=303)
+
+
+# --- settings (design doc section 7) ---------------------------------------------
+
+
+@router.get("/admin/settings", response_class=HTMLResponse)
+def settings_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    notice: str | None = None,
+):
+    settings = request.app.state.settings
+    return templates.TemplateResponse(
+        request,
+        "admin_settings.html",
+        {
+            "rating": settings.rating,
+            "team_gen": settings.team_gen,
+            "defaults": RatingConfig(),
+            "team_defaults": TeamGenConfig(),
+            "seasons": len(seasons_service.list_seasons(db)),
+            "auth_configured": request.app.state.auth.configured,
+            "notice": notice,
+        },
+    )
+
+
+@router.post("/admin/settings/recompute", response_class=HTMLResponse)
+def recompute_everything(request: Request, db: Session = Depends(get_db)):
+    """Replay every season from the games. Safe to run at any time."""
+    recompute_all_ratings(db, request.app.state.settings.rating)
+    return settings_page(request, db, notice="Every season has been replayed.")

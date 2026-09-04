@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Seasons — Mini League{% endblock %}
+{% block body %}
+<div class="row between">
+  <div>
+    <h1>Seasons</h1>
+    <p class="sub">Ratings restart each season. Nothing is ever deleted.</p>
+  </div>
+  <a class="btn small" href="/admin">Organizer</a>
+</div>
+
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+{% if notice %}<div class="flash ok">{{ notice }}</div>{% endif %}
+
+<div class="card">
+  <h2>Start a new season</h2>
+  <p class="muted small" style="margin-top:0">
+    {% if current %}
+      This ends {{ current.name }} the day before the new one starts. Past
+      sessions, games and standings all stay viewable.
+    {% else %}
+      No season is open, so sessions cannot be created until you start one.
+    {% endif %}
+  </p>
+  <form method="post" action="/admin/seasons">
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" placeholder="Spring 2027" required>
+    <label for="start_date" style="margin-top:10px">Starts</label>
+    <input type="date" id="start_date" name="start_date" value="{{ today }}" required>
+    <button class="btn primary" style="margin-top:12px" type="submit">Start season</button>
+  </form>
+</div>
+
+{% for row in seasons %}
+  <div class="card">
+    <div class="row between">
+      <strong>{{ row.season.name }}</strong>
+      {% if not row.season.end_date %}<span class="muted small">current</span>{% endif %}
+    </div>
+    <div class="muted small" style="margin-top:3px">
+      {{ row.season.start_date }} to {{ row.season.end_date or "now" }}
+      &middot; {{ row.sessions }} session{{ "" if row.sessions == 1 else "s" }}
+      &middot; {{ row.rated }} rated player{{ "" if row.rated == 1 else "s" }}
+    </div>
+    <form method="post" action="/admin/seasons/{{ row.season.id }}/rename"
+          class="row" style="margin-top:10px; gap:6px">
+      <input class="grow" type="text" name="name" value="{{ row.season.name }}"
+             aria-label="New name for {{ row.season.name }}">
+      <button class="btn small" type="submit">Rename</button>
+    </form>
+    <a class="btn small" style="margin-top:8px"
+       href="/?season_id={{ row.season.id }}">View standings</a>
+  </div>
+{% endfor %}
+{% endblock %}

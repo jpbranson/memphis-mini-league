@@ -6,6 +6,8 @@
       "runtimeExecutable": "uv",
       "runtimeArgs": [
         "run",
+        "--env-file",
+        ".env.local",
         "uvicorn",
         "mini_league.web.app:app",
         "--factory",

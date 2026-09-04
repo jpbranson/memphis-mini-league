@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}{{ session.date }} — Mini League{% endblock %}
+{% block body %}
+<div class="row between">
+  <div>
+    <h1>{{ session.date }}</h1>
+    <p class="sub">
+      {{ season.name }}{% if session.notes %} &middot; {{ session.notes }}{% endif %}
+    </p>
+  </div>
+  <a class="btn small" href="/sessions">All sessions</a>
+</div>
+
+<div class="card">
+  <h2>Rounds ({{ games|length }})</h2>
+  {% if games %}
+    <ul class="plain">
+      {% for game in games %}
+        <li style="flex-direction:column; align-items:stretch">
+          <div class="row between">
+            <strong>Round {{ game.round_number }}</strong>
+            <span class="muted small">{{ game.players_on_field }} a side</span>
+          </div>
+          {% for team in game.teams|sort(attribute="team_index") %}
+            <div class="small" style="margin-top:4px">
+              <span class="{{ 'teamA' if team.team_index == 0 else 'teamB' }}">
+                {{ "A" if team.team_index == 0 else "B" }}{% if team.rank == 1 %} won{% endif %}
+              </span>
+              {% for pid in team.player_ids %}<a
+                href="/players/{{ pid }}">{{ player_name(pid) }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+              {% if team.score is not none %}
+                <span class="muted">&middot; {{ team.score }}</span>
+              {% endif %}
+            </div>
+          {% endfor %}
+          {% if game.teams|map(attribute="player_ids")|map("length")|max > game.players_on_field %}
+            <div class="muted small" style="margin-top:3px">Substitutes rotated.</div>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted small">No results recorded for this session.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Who was there ({{ roster|length }})</h2>
+  <ul class="plain">
+    {% for entry in roster %}
+      <li>
+        <span><a href="/players/{{ entry.player_id }}">{{ entry.player.name }}</a>
+          <span class="rating">
+            {%- if rating_of(entry.player_id).is_new %}new{% else %}{{ rating_of(entry.player_id).rating }}{% endif -%}
+          </span>
+        </span>
+        {% if entry.checked_out_at %}<span class="muted small">left early</span>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endblock %}

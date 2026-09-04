@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Mini League{% endblock %}
+{% block body %}
+<h1>Organizer sign in</h1>
+<p class="sub">The leaderboard is open to everyone. Recording results is not.</p>
+
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+{% if not configured %}
+  <div class="flash error">
+    No organizer password is set on this instance, so signing in is not possible.
+    Set MINI_LEAGUE_PASSWORD and restart.
+  </div>
+{% else %}
+  <div class="card">
+    <form method="post" action="/login">
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" autocomplete="current-password"
+             autofocus required>
+      <input type="hidden" name="next" value="{{ next }}">
+      <button class="btn primary" style="margin-top:14px" type="submit">Sign in</button>
+      <a class="btn" style="margin-top:14px" href="/">Cancel</a>
+    </form>
+  </div>
+{% endif %}
+{% endblock %}

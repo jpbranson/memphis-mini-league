@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Sessions — Mini League{% endblock %}
+{% block body %}
+<h1>Sessions</h1>
+<p class="sub">
+  {% if season %}{{ season.name }}{% else %}Every morning played, newest first{% endif %}
+</p>
+
+{% if seasons %}
+<div class="card">
+  <form method="get" action="/sessions">
+    <label for="season_id">Season</label>
+    <select id="season_id" name="season_id"
+            style="width:100%;padding:11px;border-radius:9px;
+                   border:1px solid var(--line);background:var(--bg);color:var(--ink)">
+      <option value="">All seasons</option>
+      {% for s in seasons %}
+        <option value="{{ s.id }}" {% if season and s.id == season.id %}selected{% endif %}>
+          {{ s.name }}
+        </option>
+      {% endfor %}
+    </select>
+    <button class="btn" style="margin-top:10px" type="submit">Show</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  {% if rows %}
+    <table class="board">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Season</th>
+          <th class="num">Players</th>
+          <th class="num">Games</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td><a href="/sessions/{{ row.session.id }}">{{ row.session.date }}</a>
+              {% if row.session.notes %}
+                <div class="muted small">{{ row.session.notes }}</div>
+              {% endif %}
+            </td>
+            <td class="muted">{{ row.season.name }}</td>
+            <td class="num">{{ row.players }}</td>
+            <td class="num">{{ row.games }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted small" style="margin:0">No sessions yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

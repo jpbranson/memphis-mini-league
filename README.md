@@ -6,7 +6,7 @@ balanced team generation, and a leaderboard. See
 
 ## Status
 
-Milestones 1 to 6 are done.
+All seven milestones are done.
 
 1. **Core**: data model, Alembic migrations, TrueSkill ratings, `recompute_ratings()`.
 2. **Organizer flow**: create a session, check players in with fuzzy search and
@@ -24,8 +24,10 @@ Milestones 1 to 6 are done.
 6. **Simulator**: validates the rating system against hidden true skills and
    sweeps the parameters, with no database involved.
 
-Not built yet: the organizer password and deployment (milestone 7). Every page
-is currently unauthenticated, so do not put this on a public address yet.
+7. **Polish**: organizer sign-in, public session history, seasons and settings
+   screens, and deployment.
+
+See [DEPLOY.md](DEPLOY.md) for hosting it.
 
 ## Run the app
 
@@ -34,13 +36,23 @@ uv run alembic upgrade head
 ```
 
 ```bash
-uv run uvicorn mini_league.web.app:app --factory --port 8022
+cp .env.example .env.local
 ```
 
-Open http://localhost:8022. Create a season first, since sessions infer their
-season from their date. Then create a session and work down the board: check
-players in, assign them to team A or B, pick the winner, and record. The
-interactive API docs are at http://localhost:8022/docs.
+Edit `.env.local` to set an organizer password, then:
+
+```bash
+uv run --env-file .env.local uvicorn mini_league.web.app:app --factory --port 8022
+```
+
+Open http://localhost:8022. The leaderboard, player pages and session history
+are public. Everything that changes a result is behind the organizer password,
+and without one set those screens stay closed rather than open.
+
+Create a season first, since sessions infer their season from their date. Then
+create a session and work down the board: check players in, balance the teams,
+pick the winner, and record. The interactive API docs are at
+http://localhost:8022/docs.
 
 ## Setup
 
@@ -61,7 +73,7 @@ nothing to activate.
 uv run pytest
 ```
 
-369 tests, about 40 seconds. Coverage by file:
+422 tests, about 40 seconds. Coverage by file:
 
 | File | What it checks |
 |---|---|
@@ -82,6 +94,7 @@ uv run pytest
 | `tests/test_admin_players.py` | Player management pages, the audit log, and its API |
 | `tests/test_bench_and_format.py` | Format picker, bench selection, the swap control, and the on-field limit |
 | `tests/test_simulation.py` | The simulator, checked against cases with known answers |
+| `tests/test_auth_and_polish.py` | Sign-in and what it protects, session history, seasons, settings |
 
 Useful variants:
 
@@ -181,6 +194,8 @@ uv run alembic revision --autogenerate -m "describe the change"
 - `src/mini_league/leaderboard.py` - read models for standings and player pages
 - `src/mini_league/simulation.py` - in-memory league simulation for validating the ratings
 - `src/mini_league/web/` - FastAPI app, JSON API, Jinja2 templates, vendored htmx and Chart.js
+- `src/mini_league/web/auth.py` - organizer sign-in and which routes it guards
+- `Dockerfile`, `fly.toml`, `DEPLOY.md` - hosting
 - `alembic/` - migrations
 - `scripts/demo.py` - manual end-to-end smoke test
 - `scripts/simulate.py` - fills the database with plausible sessions

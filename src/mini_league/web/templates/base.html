@@ -124,8 +124,23 @@
           hx-get="/panel/leaderboard" hx-target="#drawer-body" hx-swap="innerHTML">
     &#9776; Standings</button>
   <a class="brand" href="/">Mini League</a>
-  <a class="btn small" href="/admin">Organizer</a>
+  {% if request.state.is_organizer %}
+    <span class="row" style="gap:6px">
+      <a class="btn small" href="/admin">Organizer</a>
+      <form method="post" action="/logout" style="display:inline">
+        <button class="btn small" type="submit">Sign out</button>
+      </form>
+    </span>
+  {% else %}
+    <a class="btn small" href="/login">Sign in</a>
+  {% endif %}
 </header>
+
+{% if request.state.is_organizer and not request.app.state.auth.configured %}
+  <div class="flash error" style="margin:8px 14px 0; max-width:720px">
+    No organizer password is set. Anyone who can reach this app can change results.
+  </div>
+{% endif %}
 
 <aside id="drawer" hidden>
   <div class="scrim" data-close-drawer></div>
@@ -135,6 +150,9 @@
       <button class="btn small" data-close-drawer>Close</button>
     </div>
     <div id="drawer-body"><p class="muted small">Loading…</p></div>
+    <p class="small" style="margin-top:14px">
+      <a href="/">Full leaderboard</a> &middot; <a href="/sessions">Sessions</a>
+    </p>
   </div>
 </aside>
 

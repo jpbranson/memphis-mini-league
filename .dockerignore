@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+.pytest_cache
+__pycache__
+**/__pycache__
+*.pyc
+*.db
+*.db-journal
+.claude
+tests
+scripts
+dist
+build
+*.egg-info
+frisbee-mini-league-design.md
