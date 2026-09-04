@@ -485,3 +485,89 @@ def test_settings_lists_the_designation_weight(client, api_season):
     body = squash(text(client.get("/admin/settings")))
     assert "Designation weight" in body
     assert "0.80" in body
+
+
+# --- Google Analytics ------------------------------------------------------------
+
+
+def analytics_client(tmp_path, measurement_id):
+    """A signed-in client whose app was built with (or without) analytics."""
+    from fastapi.testclient import TestClient
+
+    from mini_league.web import create_app
+
+    app = create_app(
+        f"sqlite:///{(tmp_path / 'ga.db').as_posix()}",
+        create_tables=True,
+        organizer_password="test-password",
+        secret_key="test-secret",
+        ga_measurement_id=measurement_id,
+    )
+    return app, TestClient(app)
+
+
+def test_no_analytics_script_is_loaded_when_none_is_configured(client):
+    """The default has to be off: this is a page anyone can open."""
+    body = text(client.get("/"))
+    assert "googletagmanager" not in body
+    assert "gtag" not in body
+
+
+def test_setting_a_measurement_id_loads_analytics(tmp_path):
+    app, test_client = analytics_client(tmp_path, "G-ABC1234567")
+    with test_client:
+        body = text(test_client.get("/"))
+    app.state.engine.dispose()
+    assert "https://www.googletagmanager.com/gtag/js?id=G-ABC1234567" in body
+    assert "gtag('config', \"G-ABC1234567\")" in body
+
+
+def test_analytics_reaches_the_organizer_screens_too(tmp_path):
+    app, test_client = analytics_client(tmp_path, "G-ABC1234567")
+    with test_client:
+        test_client.post(
+            "/login", data={"password": "test-password", "next": "/admin"}
+        )
+        body = text(test_client.get("/admin"))
+    app.state.engine.dispose()
+    assert "googletagmanager" in body
+
+
+def test_a_blank_measurement_id_is_the_same_as_none(tmp_path):
+    app, test_client = analytics_client(tmp_path, "   ")
+    with test_client:
+        body = text(test_client.get("/"))
+    app.state.engine.dispose()
+    assert "googletagmanager" not in body
+
+
+def test_the_measurement_id_cannot_break_out_of_the_script(tmp_path):
+    """An operator's typo should not become a way into the page.
+
+    The value only ever reaches a page through an environment variable, so this
+    is not a route a visitor can take. It is still quoted properly: the payload
+    stays inside the string literal and inside the query string rather than
+    ending either of them.
+    """
+    app, test_client = analytics_client(tmp_path, '"); alert(1); //')
+    with test_client:
+        body = text(test_client.get("/"))
+    app.state.engine.dispose()
+    # Escaped into the JS string, so the quote cannot close it.
+    assert r'''gtag('config', "\"); alert(1); //")''' in body
+    # Percent-encoded into the src, so it cannot end the attribute or the query.
+    assert "id=%22%29%3B%20alert%281%29%3B%20//" in body
+    assert '<script async src="https://www.googletagmanager.com/gtag/js?id="' not in body
+
+
+def test_the_environment_turns_analytics_on(monkeypatch):
+    from mini_league.settings import get_settings
+
+    monkeypatch.delenv("MINI_LEAGUE_GA_MEASUREMENT_ID", raising=False)
+    assert get_settings().ga_measurement_id is None
+
+    monkeypatch.setenv("MINI_LEAGUE_GA_MEASUREMENT_ID", "  G-ABC1234567  ")
+    assert get_settings().ga_measurement_id == "G-ABC1234567"
+
+    monkeypatch.setenv("MINI_LEAGUE_GA_MEASUREMENT_ID", "")
+    assert get_settings().ga_measurement_id is None

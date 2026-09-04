@@ -55,6 +55,10 @@ class Settings:
     # Signs the session cookie. Unset means a fresh key each start, which logs
     # everyone out on restart but never falls back to a guessable value.
     secret_key: str | None = None
+    # Google Analytics measurement id, like "G-XXXXXXXXXX". Unset means no
+    # analytics at all: no third-party script is fetched and no cookie is set,
+    # which is the right default for a page anyone can open.
+    ga_measurement_id: str | None = None
 
 
 DEFAULT_RATING_CONFIG = RatingConfig()
@@ -108,4 +112,9 @@ def get_settings() -> Settings:
         database_url=os.environ.get("MINI_LEAGUE_DATABASE_URL", Settings.database_url),
         organizer_password=os.environ.get("MINI_LEAGUE_PASSWORD") or None,
         secret_key=os.environ.get("MINI_LEAGUE_SECRET_KEY") or None,
+        # Not validated against the "G-" shape on purpose. A typo here should
+        # cost you a week of analytics, not the league its app, and this is the
+        # one setting the app itself never reads back.
+        ga_measurement_id=(os.environ.get("MINI_LEAGUE_GA_MEASUREMENT_ID") or "").strip()
+        or None,
     )

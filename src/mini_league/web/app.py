@@ -20,6 +20,7 @@ def create_app(
     create_tables: bool = False,
     organizer_password: str | None = None,
     secret_key: str | None = None,
+    ga_measurement_id: str | None = None,
 ) -> FastAPI:
     """Build the app.
 
@@ -46,6 +47,12 @@ def create_app(
     app.state.engine = engine
     app.state.session_factory = make_session_factory(engine)
     app.state.settings = settings
+    # Read by base.html to decide whether to load Google Analytics at all.
+    # Stripped here as well as in get_settings, so a blank passed straight to
+    # the factory is off rather than a tag with no id in it.
+    app.state.ga_measurement_id = (
+        ga_measurement_id or settings.ga_measurement_id or ""
+    ).strip() or None
     app.state.auth = auth.AuthConfig(
         password=organizer_password or settings.organizer_password,
         # A random key when none is configured: sessions then end at restart,

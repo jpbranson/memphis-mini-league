@@ -5,6 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Mini League{% endblock %}</title>
 <script src="/static/htmx.min.js"></script>
+{% set ga_id = request.app.state.ga_measurement_id %}
+{% if ga_id %}
+  {# Google Analytics, and the only third party this app talks to. Everything
+     else, htmx and Chart.js included, is served from /static so the app keeps
+     working with nothing else reachable; this one is here because it cannot be.
+
+     It loads only when MINI_LEAGUE_GA_MEASUREMENT_ID is set, so an instance
+     that has not asked for analytics fetches nothing and sets no cookie.
+
+     The id is written with `tojson` rather than dropped into the source. It
+     comes from an environment variable an operator sets, not from anything a
+     visitor can reach, but a value interpolated into a script tag is worth
+     quoting properly whatever its provenance. #}
+  <script async src="https://www.googletagmanager.com/gtag/js?id={{ ga_id|urlencode }}"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', {{ ga_id|tojson }});
+  </script>
+{% endif %}
 <style>
   /* Read on a phone, outdoors, standing up. That rules out low-contrast greys
      and small text; it argues for near-black on warm paper and big targets. */

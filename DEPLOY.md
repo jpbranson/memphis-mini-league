@@ -59,6 +59,26 @@ docker run -d --name mini-league -p 8080:8080 \
   mini-league
 ```
 
+## Analytics
+
+Off unless you ask for it. Set a measurement id and the app loads Google
+Analytics on every page; leave it unset and no third-party script is fetched and
+no analytics cookie is set.
+
+```bash
+fly secrets set MINI_LEAGUE_GA_MEASUREMENT_ID=G-XXXXXXXXXX
+```
+
+A measurement id is not a secret, since it is visible in the page source of
+every site that uses one. `fly secrets` is only the least fiddly way to set an
+environment variable; putting it under `[env]` in `fly.toml` works as well and
+keeps it in version control, which is arguably the more honest place for it.
+
+Worth knowing before you turn it on. The leaderboard and player pages are
+public, so Google will receive the URL and the page title of every page anyone
+opens, and a player page's title is that player's name. If the league would
+rather that did not leave the building, leave this unset.
+
 ## Backups
 
 The whole league is one file at `/data/mini_league.db`. Copy it and you have
