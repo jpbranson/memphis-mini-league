@@ -6,7 +6,7 @@ balanced team generation, and a leaderboard. See
 
 ## Status
 
-Milestones 1 to 5 are done.
+Milestones 1 to 6 are done.
 
 1. **Core**: data model, Alembic migrations, TrueSkill ratings, `recompute_ratings()`.
 2. **Organizer flow**: create a session, check players in with fuzzy search and
@@ -21,9 +21,11 @@ Milestones 1 to 5 are done.
    field, balancing that benches whoever has played most, a one-for-one swap,
    and a live predicted win percentage.
 
-Not built yet: the simulator that tunes the rating parameters (milestone 6) and
-the organizer password (milestone 7). Every page is currently unauthenticated,
-so do not put this on a public address yet.
+6. **Simulator**: validates the rating system against hidden true skills and
+   sweeps the parameters, with no database involved.
+
+Not built yet: the organizer password and deployment (milestone 7). Every page
+is currently unauthenticated, so do not put this on a public address yet.
 
 ## Run the app
 
@@ -59,7 +61,7 @@ nothing to activate.
 uv run pytest
 ```
 
-338 tests, about 30 seconds. Coverage by file:
+369 tests, about 40 seconds. Coverage by file:
 
 | File | What it checks |
 |---|---|
@@ -78,7 +80,8 @@ uv run pytest
 | `tests/test_public_pages.py` | Leaderboard, player pages, the rating explanation, and the drawer |
 | `tests/test_merges.py` | Rename, retire, merge planning, merging, and undo |
 | `tests/test_admin_players.py` | Player management pages, the audit log, and its API |
-| `tests/test_bench_and_format.py` | Format picker, bench selection, and the swap control |
+| `tests/test_bench_and_format.py` | Format picker, bench selection, the swap control, and the on-field limit |
+| `tests/test_simulation.py` | The simulator, checked against cases with known answers |
 
 Useful variants:
 
@@ -120,6 +123,19 @@ most five a side take the field with bigger rosters rotating substitutes, and
 games run to 5 at four a side or more and to 3 below that. Pass `--seed` for a
 repeatable run. This is sample data, not the parameter-tuning simulator from
 milestone 6.
+
+## Validate the rating system
+
+```bash
+uv run python scripts/validate_ratings.py
+```
+
+Simulates leagues where each player has a hidden true skill the rating system
+never sees, then measures how well the leaderboard recovers it. Reports how many
+games are needed before the order is right, whether team size or substituting
+biases anyone, whether the predicted win percentages are honest, and how the
+parameters compare. Takes about a minute. Use `--check` for one section and
+`--repeats` to narrow the margins.
 
 ## Migrations
 
@@ -163,7 +179,9 @@ uv run alembic revision --autogenerate -m "describe the change"
 - `src/mini_league/merges.py` - rename, retire, merge duplicates, undo
 - `src/mini_league/teams.py` - balanced team generation, a pure function
 - `src/mini_league/leaderboard.py` - read models for standings and player pages
+- `src/mini_league/simulation.py` - in-memory league simulation for validating the ratings
 - `src/mini_league/web/` - FastAPI app, JSON API, Jinja2 templates, vendored htmx and Chart.js
 - `alembic/` - migrations
 - `scripts/demo.py` - manual end-to-end smoke test
 - `scripts/simulate.py` - fills the database with plausible sessions
+- `scripts/validate_ratings.py` - checks and tunes the rating system
