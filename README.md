@@ -27,6 +27,17 @@ All seven milestones are done.
 7. **Polish**: organizer sign-in, public session history, seasons and settings
    screens, and deployment.
 
+Since then, and not part of any milestone:
+
+- **Designations**: an optional WMP or MMP per player, which the balancer
+  evens up across sides when asked, without ever being allowed to force a
+  lopsided match. A session can override one for the day; a player's own page
+  sets the standing one. Designations never reach a rating.
+- **Sharing**: a favicon and masthead mark for each palette, and Open Graph
+  tags so a link sent in a message arrives as a card rather than a bare URL.
+- **Analytics**: optional Google Analytics, loaded only by an instance that
+  sets a measurement id. See [DEPLOY.md](DEPLOY.md).
+
 See [DEPLOY.md](DEPLOY.md) for hosting it.
 
 ## Run the app
@@ -63,7 +74,8 @@ so no separate Python install is needed.
 uv sync
 ```
 
-That creates `.venv` and installs SQLAlchemy, Alembic, trueskill, and pytest.
+That creates `.venv` and installs FastAPI, uvicorn, Jinja2, SQLAlchemy,
+Alembic, trueskill, and pytest.
 Prefix commands with `uv run` and the virtualenv is used automatically; there is
 nothing to activate.
 
@@ -73,7 +85,7 @@ nothing to activate.
 uv run pytest
 ```
 
-422 tests, about 40 seconds. Coverage by file:
+546 tests, about 30 seconds. Coverage by file:
 
 | File | What it checks |
 |---|---|
@@ -93,6 +105,7 @@ uv run pytest
 | `tests/test_merges.py` | Rename, retire, merge planning, merging, and undo |
 | `tests/test_admin_players.py` | Player management pages, the audit log, and its API |
 | `tests/test_bench_and_format.py` | Format picker, bench selection, the swap control, and the on-field limit |
+| `tests/test_designations.py` | WMP and MMP: parsing, session overrides, even coed splits, and that none of it reaches a rating |
 | `tests/test_simulation.py` | The simulator, checked against cases with known answers |
 | `tests/test_auth_and_polish.py` | Sign-in and what it protects, session history, seasons, settings |
 
@@ -136,6 +149,27 @@ most five a side take the field with bigger rosters rotating substitutes, and
 games run to 5 at four a side or more and to 3 below that. Pass `--seed` for a
 repeatable run. This is sample data, not the parameter-tuning simulator from
 milestone 6.
+
+## Seed a whole season
+
+Where `simulate.py` adds mornings to whatever is already there, this starts
+from nothing: it deletes the database, rebuilds the schema from the real
+migrations, invents a roster and plays a season out.
+
+```bash
+uv run python scripts/seed_season.py --seed 65
+```
+
+Fifteen players, eight of them regulars at about 70% attendance and the rest
+drifting in and out in streaks; fifteen sessions, one a day, the last of them
+today; fifty games at 80% 3v3, 10% 2v2 and 10% 4v4; and 7 WMPs to 8 MMPs, with
+every morning balanced as a coed one. Teams come from the app's own balancer
+and the bench from its own fairness rule, so the history looks like a league
+that used the app all season.
+
+**This deletes the database it points at.** It refuses to run against anything
+but a local SQLite file, but point `--database-url` somewhere you care about
+and it will happily wipe it.
 
 ## Validate the rating system
 
@@ -191,13 +225,16 @@ uv run alembic revision --autogenerate -m "describe the change"
 - `src/mini_league/audit.py` - audit entries carrying full before-state
 - `src/mini_league/merges.py` - rename, retire, merge duplicates, undo
 - `src/mini_league/teams.py` - balanced team generation, a pure function
+- `src/mini_league/designations.py` - WMP and MMP, and how evenly a split spreads them
 - `src/mini_league/leaderboard.py` - read models for standings and player pages
 - `src/mini_league/simulation.py` - in-memory league simulation for validating the ratings
-- `src/mini_league/web/` - FastAPI app, JSON API, Jinja2 templates, vendored htmx and Chart.js
+- `src/mini_league/web/` - FastAPI app, JSON API, Jinja2 templates
 - `src/mini_league/web/auth.py` - organizer sign-in and which routes it guards
+- `src/mini_league/web/static/` - vendored htmx and Chart.js, the two favicons, the share card
 - `Dockerfile`, `fly.toml`, `DEPLOY.md` - hosting
 - `alembic/` - migrations
 - `scripts/demo.py` - manual end-to-end smoke test
 - `scripts/simulate.py` - fills the database with plausible sessions
+- `scripts/seed_season.py` - wipes the database and plays a whole season into it
 - `scripts/validate_ratings.py` - checks and tunes the rating system
 - `scripts/make_share_images.py` - redraws the link-preview PNGs from the palette

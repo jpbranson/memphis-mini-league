@@ -140,6 +140,7 @@ players
   created_at    timestamp
   active        boolean          -- soft delete / retired
   merged_into   FK players nullable  -- set when this record was merged into another
+  designation   text nullable    -- WMP, MMP or null; matchmaking only, see 5.4
 
 seasons
   id            integer PK
@@ -153,6 +154,8 @@ sessions
   season_id     FK seasons
   date          date
   notes         text nullable
+  pending_teams json nullable    -- teams picked but not yet played, so a locked
+                                 -- phone does not lose the line-up
   created_at    timestamp
 
 session_players                  -- who was checked in
@@ -160,6 +163,9 @@ session_players                  -- who was checked in
   player_id     FK players
   checked_in_at timestamp
   checked_out_at timestamp nullable
+  designation_override text nullable  -- this morning only: WMP, MMP, or NONE
+                                      -- meaning none today, which is not the
+                                      -- same as having no override
   PK (session_id, player_id)
 
 games

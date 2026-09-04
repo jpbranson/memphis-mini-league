@@ -13,7 +13,7 @@ or every result is lost on the next deploy.
 Generate a key with:
 
 ```bash
-python -c "import secrets; print(secrets.token_urlsafe(32))"
+uv run python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
 There is one shared password for the whole league, which is what the design
