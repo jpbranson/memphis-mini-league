@@ -341,3 +341,88 @@ def test_health_reports_the_database_and_schema(client):
 def test_health_needs_no_sign_in(visitor, unconfigured):
     assert visitor.get("/health").json()["status"] == "ok"
     assert unconfigured.get("/health").json()["status"] == "ok"
+
+
+# --- editing from the session history page ---------------------------------------
+
+
+def played_session(client, page_session, make_api_players):
+    a, b, c, d = make_api_players("Ada", "Ben", "Cleo", "Dev")
+    check_in_all(client, page_session, [a, b, c, d])
+    play_round(client, page_session, [a, b], [c, d], score=(5, 3))
+    body = text(client.get(f"/sessions/{page_session}"))
+    return int(re.search(r"/admin/games/(\d+)/", body).group(1))
+
+
+def test_a_visitor_sees_no_edit_controls(visitor, client, page_session, make_api_players):
+    played_session(client, page_session, make_api_players)
+    body = text(visitor.get(f"/sessions/{page_session}"))
+    assert "Ada" in body, "the history itself stays public"
+    # Assert on the controls themselves; the shared script and stylesheet
+    # mention these words on every page.
+    assert 'href="/admin/games/' not in body
+    assert 'action="/admin/games/' not in body
+    assert "<span data-panel hidden>" not in squash(body)
+
+
+def test_an_organizer_gets_edit_and_delete_on_the_history_page(
+    client, page_session, make_api_players
+):
+    game_id = played_session(client, page_session, make_api_players)
+    body = squash(text(client.get(f"/sessions/{page_session}")))
+    assert f'href="/admin/games/{game_id}/edit"' in body
+    assert f'action="/admin/games/{game_id}/delete"' in body
+    assert "<span data-panel hidden>" in body, "confirmation starts hidden"
+    assert f'name="return_to" value="/sessions/{page_session}"' in body
+
+
+def test_deleting_from_the_history_page_returns_there(
+    client, page_session, make_api_players
+):
+    game_id = played_session(client, page_session, make_api_players)
+    r = client.post(
+        f"/admin/games/{game_id}/delete",
+        data={"return_to": f"/sessions/{page_session}"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/sessions/{page_session}"
+    assert client.get(f"/api/sessions/{page_session}").json()["games"] == []
+
+
+def test_undo_is_offered_on_the_history_page_and_works(
+    client, page_session, make_api_players
+):
+    game_id = played_session(client, page_session, make_api_players)
+    client.post(f"/admin/games/{game_id}/delete",
+                data={"return_to": f"/sessions/{page_session}"})
+
+    body = squash(text(client.get(f"/sessions/{page_session}")))
+    assert "Round 1, not counted" in body
+    assert f'action="/admin/games/{game_id}/restore"' in body
+
+    r = client.post(
+        f"/admin/games/{game_id}/restore",
+        data={"return_to": f"/sessions/{page_session}"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert len(client.get(f"/api/sessions/{page_session}").json()["games"]) == 1
+
+
+def test_return_to_cannot_send_you_off_the_site(client, page_session, make_api_players):
+    game_id = played_session(client, page_session, make_api_players)
+    r = client.post(
+        f"/admin/games/{game_id}/delete",
+        data={"return_to": "//example.com/steal"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/sessions/{page_session}"
+
+
+def test_the_board_delete_still_returns_the_board(client, page_session, make_api_players):
+    game_id = played_session(client, page_session, make_api_players)
+    r = client.post(f"/admin/games/{game_id}/delete")
+    assert r.status_code == 200
+    assert "Round deleted" in text(r)

@@ -615,3 +615,54 @@ def test_delete_still_works_when_confirmed(client, page_session, make_api_player
     assert r.status_code == 200
     assert "Round deleted" in text(r)
     assert "Rounds (0)" in text(r)
+
+
+def test_the_confirm_panel_starts_hidden_and_css_cannot_reveal_it(
+    client, page_session, make_api_players
+):
+    """A display rule beat the hidden attribute once and put Delete, Really
+    delete and Keep on screen together."""
+    a, b = make_api_players("A", "B")
+    check_in_all(client, page_session, [a, b])
+    client.post(
+        f"/admin/session/{page_session}/games",
+        data={f"assign_{a}": "0", f"assign_{b}": "1", "winner": "0"},
+    )
+    body = text(client.get(f"/admin/session/{page_session}"))
+    assert "<span data-panel hidden>" in squash(body)
+    # The stylesheet has to make [hidden] win, whatever else it says.
+    assert "[hidden] { display: none !important; }" in body
+
+
+def test_three_a_side_is_the_default(client, page_session, make_api_players):
+    """It is what this league plays most."""
+    ids = make_api_players("A", "B", "C", "D")
+    check_in_all(client, page_session, ids)
+    body = squash(text(client.get(f"/admin/session/{page_session}")))
+    assert 'name="team_size" value="3"' in body
+    assert 'name="max_on_field" value="3"' in body
+
+
+def test_the_default_makes_a_three_a_side_game(client, page_session, make_api_players):
+    ids = make_api_players(*[f"P{i}" for i in range(8)])
+    check_in_all(client, page_session, ids)
+    r = client.post(
+        f"/admin/session/{page_session}/balance",
+        data={"team_size": "3", "max_on_field": "3"},
+    )
+    chosen = assignments_in(text(r))
+    assert len(chosen) == 6
+    assert sorted(chosen.values()) == ["0"] * 3 + ["1"] * 3
+    assert len(sitting_out(text(r))) == 2
+
+
+def test_a_saved_choice_still_beats_the_default(client, page_session, make_api_players):
+    ids = make_api_players(*[f"P{i}" for i in range(10)])
+    check_in_all(client, page_session, ids)
+    client.post(
+        f"/admin/session/{page_session}/balance",
+        data={"team_size": "5", "max_on_field": "5"},
+    )
+    body = squash(text(client.get(f"/admin/session/{page_session}")))
+    assert 'name="team_size" value="5"' in body
+    assert 'name="max_on_field" value="5"' in body

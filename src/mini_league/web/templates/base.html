@@ -159,6 +159,10 @@
     padding: 14px 16px; overflow-y: auto;
   }
   .htmx-request { opacity: .55; }
+  /* [hidden] must win over any display rule below, or an element told to hide
+     stays on screen. This is what put Delete, Really delete and Keep side by
+     side at once. */
+  [hidden] { display: none !important; }
   .confirm { display: inline-flex; gap: 6px; align-items: center; }
   .confirm [data-panel] { display: inline-flex; gap: 6px; }
 </style>

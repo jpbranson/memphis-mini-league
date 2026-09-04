@@ -38,8 +38,10 @@ from .deps import get_db, templates
 router = APIRouter()
 
 DEFAULT_MIN_GAMES = 5
-# At most five a side on the field; bigger rosters rotate substitutes.
-DEFAULT_MAX_ON_FIELD = 5
+# Three a side is what this league plays most, so it is what the board offers
+# before anyone changes it. Both fields stay editable per round.
+DEFAULT_TEAM_SIZE = "3"
+DEFAULT_MAX_ON_FIELD = 3
 
 
 # --- shared helpers -------------------------------------------------------------
@@ -189,7 +191,7 @@ def board_context(
         "rating_of": rating_lookup(db, session.season_id),
         "assignment": assignment,
         "matchup": matchup(db, session, assignment, DEFAULT_MAX_ON_FIELD),
-        "team_size": saved["team_size"],
+        "team_size": saved["team_size"] or DEFAULT_TEAM_SIZE,
         "max_on_field": saved["max_on_field"] or str(DEFAULT_MAX_ON_FIELD),
         "benched": (
             [sp for sp in present if sp.player_id not in assignment] if assignment else []
@@ -521,7 +523,7 @@ def record_card_context(
     assignment: dict[int, int],
     *,
     notice: str | None = None,
-    team_size: str = "",
+    team_size: str = DEFAULT_TEAM_SIZE,
     max_on_field: str = str(DEFAULT_MAX_ON_FIELD),
     benched: list[int] | None = None,
 ) -> dict:
@@ -803,7 +805,14 @@ async def record_result(request: Request, session_id: int, db: Session = Depends
 
 
 @router.post("/admin/games/{game_id}/delete", response_class=HTMLResponse)
-def delete_game(request: Request, game_id: int, db: Session = Depends(get_db)):
+def delete_game(
+    request: Request,
+    game_id: int,
+    return_to: str = Form(default=""),
+    db: Session = Depends(get_db),
+):
+    """`return_to` lets the session history page send the organizer back to it
+    instead of receiving the day-of board it has no place to put."""
     try:
         game = games_service.get_game(db, game_id)
         session = game.session
@@ -811,12 +820,23 @@ def delete_game(request: Request, game_id: int, db: Session = Depends(get_db)):
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
+        if return_to:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return render_board(request, db, session, error=str(exc), status_code=400)
+    if return_to:
+        return RedirectResponse(
+            auth.safe_next(return_to, f"/sessions/{session.id}"), status_code=303
+        )
     return render_board(request, db, session, notice="Round deleted. Ratings replayed.")
 
 
 @router.post("/admin/games/{game_id}/restore", response_class=HTMLResponse)
-def restore_game(request: Request, game_id: int, db: Session = Depends(get_db)):
+def restore_game(
+    request: Request,
+    game_id: int,
+    return_to: str = Form(default=""),
+    db: Session = Depends(get_db),
+):
     try:
         game = games_service.get_game(db, game_id)
         session = game.session
@@ -824,7 +844,13 @@ def restore_game(request: Request, game_id: int, db: Session = Depends(get_db)):
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
+        if return_to:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return render_board(request, db, session, error=str(exc), status_code=400)
+    if return_to:
+        return RedirectResponse(
+            auth.safe_next(return_to, f"/sessions/{session.id}"), status_code=303
+        )
     return render_board(request, db, session, notice="Round restored.")
 
 
@@ -1161,8 +1187,9 @@ def session_history_page(request: Request, session_id: int, db: Session = Depend
     # Named for the page, not the data: `session_history` is already the helper
     # that feeds this session's pairings to the team balancer.
     session = load_session(db, session_id)
+    everything = games_service.session_games(db, session_id, include_deleted=True)
     games = sorted(
-        games_service.session_games(db, session_id),
+        (g for g in everything if g.deleted_at is None),
         key=lambda g: (g.round_number, g.id),
     )
     return templates.TemplateResponse(
@@ -1172,6 +1199,7 @@ def session_history_page(request: Request, session_id: int, db: Session = Depend
             "session": session,
             "season": session.season,
             "games": games,
+            "deleted_games": [g for g in everything if g.deleted_at is not None],
             "roster": sessions_service.session_roster(db, session_id),
             "player_name": lambda pid: db.get(Player, pid).name,
             "rating_of": rating_lookup(db, session.season_id),
