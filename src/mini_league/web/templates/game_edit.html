@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Edit round {{ game.round_number }} — Mini League{% endblock %}
+{% block body %}
+<h1>Edit round {{ game.round_number }}</h1>
+<p class="sub">Saving replays every rating in this season.</p>
+
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <form method="post" action="/admin/games/{{ game.id }}/edit">
+    <ul class="plain">
+      {% for player in candidates %}
+        {% set current = assignment.get(player.id) %}
+        <li>
+          <span>{{ player.name }}</span>
+          <span class="seg">
+            <label><input type="radio" name="assign_{{ player.id }}" value="0"
+                   {% if current == 0 %}checked{% endif %}><span>A</span></label>
+            <label><input type="radio" name="assign_{{ player.id }}" value="1"
+                   {% if current == 1 %}checked{% endif %}><span>B</span></label>
+            <label><input type="radio" name="assign_{{ player.id }}" value="out"
+                   {% if current is none %}checked{% endif %}><span>Out</span></label>
+          </span>
+        </li>
+      {% endfor %}
+    </ul>
+
+    <label style="margin-top:14px">Who won?</label>
+    <div class="winner">
+      <label><input type="radio" name="winner" value="0"
+             {% if winner_index == 0 %}checked{% endif %}>Team A</label>
+      <label><input type="radio" name="winner" value="1"
+             {% if winner_index == 1 %}checked{% endif %}>Team B</label>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <div class="grow">
+        <label for="score_0">Score A</label>
+        <input type="number" id="score_0" name="score_0" min="0" inputmode="numeric"
+               value="{{ teams[0].score if teams[0].score is not none else '' }}">
+      </div>
+      <div class="grow">
+        <label for="score_1">Score B</label>
+        <input type="number" id="score_1" name="score_1" min="0" inputmode="numeric"
+               value="{{ teams[1].score if teams[1].score is not none else '' }}">
+      </div>
+    </div>
+
+    <label for="players_on_field" style="margin-top:12px">Players per team on the field</label>
+    <input type="number" id="players_on_field" name="players_on_field" min="1"
+           inputmode="numeric" value="{{ game.players_on_field }}">
+
+    <button class="btn primary" style="margin-top:14px" type="submit">Save and replay ratings</button>
+    <a class="btn" style="margin-top:14px" href="/admin/session/{{ session.id }}">Cancel</a>
+  </form>
+</div>
+{% endblock %}

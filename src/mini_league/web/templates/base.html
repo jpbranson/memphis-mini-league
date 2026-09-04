@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Mini League{% endblock %}</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/htmx/1.9.12/htmx.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --ink: #16191d; --muted: #666e79;
+    --line: #dfe3e8; --accent: #1f6feb; --a: #2f7d4f; --b: #8a4b1e;
+    --danger: #b3261e; --ok: #1f6f3f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171a; --card: #1c2024; --ink: #e8eaed; --muted: #9aa4af;
+      --line: #2c3238; --accent: #5b9cf8; --a: #6cc48f; --b: #d99a63;
+      --danger: #f2857c; --ok: #6cc48f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 16px 14px 64px; }
+  h1 { font-size: 1.35rem; margin: 0 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 10px; }
+  a { color: var(--accent); }
+  .sub { color: var(--muted); font-size: .9rem; margin: 0 0 18px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px; margin-bottom: 14px;
+  }
+  label { display: block; font-size: .9rem; color: var(--muted); margin-bottom: 4px; }
+  input[type=text], input[type=date], input[type=number], textarea {
+    width: 100%; padding: 11px; font-size: 1rem; border-radius: 9px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+  }
+  .btn {
+    display: inline-block; padding: 11px 15px; font-size: 1rem; font-weight: 600;
+    border-radius: 9px; border: 1px solid var(--line); background: var(--card);
+    color: var(--ink); cursor: pointer; text-decoration: none;
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.small { padding: 7px 10px; font-size: .85rem; font-weight: 500; }
+  .btn.danger { color: var(--danger); }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row.between { justify-content: space-between; }
+  .row.wrap { flex-wrap: wrap; }
+  .grow { flex: 1; }
+  .muted { color: var(--muted); }
+  .small { font-size: .85rem; }
+  .flash { padding: 10px 12px; border-radius: 9px; margin-bottom: 12px; font-size: .92rem; }
+  .flash.error { background: #fdecea; color: #7d1a13; }
+  .flash.ok { background: #e7f4ec; color: #15532f; }
+  @media (prefers-color-scheme: dark) {
+    .flash.error { background: #3a1c1a; color: #ffb4ad; }
+    .flash.ok { background: #16301f; color: #9fe0b8; }
+  }
+  ul.plain { list-style: none; margin: 0; padding: 0; }
+  ul.plain li {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line);
+  }
+  ul.plain li:last-child { border-bottom: 0; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+  .seg label {
+    margin: 0; padding: 9px 13px; font-size: .9rem; font-weight: 600; cursor: pointer;
+    background: var(--card); color: var(--muted); border-right: 1px solid var(--line);
+  }
+  .seg label:last-child { border-right: 0; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg input:checked + span { color: #fff; }
+  .seg label:has(input[value="0"]:checked) { background: var(--a); color: #fff; }
+  .seg label:has(input[value="1"]:checked) { background: var(--b); color: #fff; }
+  .seg label:has(input[value="out"]:checked) { background: var(--muted); color: #fff; }
+  .winner { display: flex; gap: 10px; }
+  .winner label {
+    flex: 1; text-align: center; margin: 0; padding: 13px; border-radius: 9px;
+    border: 2px solid var(--line); font-weight: 700; cursor: pointer; color: var(--muted);
+  }
+  .winner label:has(input[value="0"]:checked) { border-color: var(--a); color: var(--a); }
+  .winner label:has(input[value="1"]:checked) { border-color: var(--b); color: var(--b); }
+  .winner input { position: absolute; opacity: 0; pointer-events: none; }
+  .teamA { color: var(--a); font-weight: 600; }
+  .teamB { color: var(--b); font-weight: 600; }
+  .htmx-request { opacity: .6; }
+</style>
+</head>
+<body>
+<main>
+  {% block body %}{% endblock %}
+</main>
+</body>
+</html>

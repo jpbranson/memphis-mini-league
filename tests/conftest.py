@@ -52,3 +52,60 @@ def make_players(db: Session):
         return players
 
     return _make
+
+
+# --- web fixtures ---------------------------------------------------------------
+
+
+@pytest.fixture
+def client(tmp_path):
+    """TestClient over a throwaway file-backed database."""
+    from fastapi.testclient import TestClient
+
+    from mini_league.web import create_app
+
+    url = f"sqlite:///{(tmp_path / 'web.db').as_posix()}"
+    app = create_app(url, create_tables=True)
+    with TestClient(app) as test_client:
+        yield test_client
+    app.state.engine.dispose()
+
+
+@pytest.fixture
+def api_season(client):
+    """A season exists, so sessions can infer one from their date."""
+    response = client.post(
+        "/api/seasons", json={"name": "Fall 2026", "start_date": "2026-09-01"}
+    )
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
+@pytest.fixture
+def api_session(client, api_season) -> int:
+    response = client.post("/api/sessions", json={"date": "2026-09-05"})
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
+@pytest.fixture
+def page_session(client, api_season) -> int:
+    """A session created through the organizer page, for page-level tests."""
+    response = client.post(
+        "/admin/session/new", data={"date": "2026-09-05"}, follow_redirects=False
+    )
+    assert response.status_code == 303
+    return int(response.headers["location"].rsplit("/", 1)[1])
+
+
+@pytest.fixture
+def make_api_players(client):
+    def _make(*names: str) -> list[int]:
+        ids = []
+        for name in names:
+            response = client.post("/api/players", json={"name": name, "force": True})
+            assert response.status_code == 201, response.text
+            ids.append(response.json()["id"])
+        return ids
+
+    return _make

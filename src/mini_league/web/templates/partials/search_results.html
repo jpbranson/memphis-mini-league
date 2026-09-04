@@ -1,0 +1,31 @@
+{# Live fuzzy search under the "add a player" box (design doc section 6.1). #}
+{% if query %}
+  {% if matches %}
+    <ul class="plain" style="margin-top:8px">
+      {% for m in matches %}
+        <li>
+          <span>
+            {{ m.player.name }}
+            {% if not m.player.active %}<span class="muted small">inactive</span>{% endif %}
+            {% if m.player.id in checked_in_ids %}
+              <span class="muted small">already on the list</span>
+            {% endif %}
+          </span>
+          <button class="btn small"
+                  hx-post="/admin/session/{{ session.id }}/checkin"
+                  hx-vals='{"player_id": {{ m.player.id }}}'
+                  hx-target="#board">Check in</button>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted small" style="margin-top:8px">No existing player matches "{{ query }}".</p>
+  {% endif %}
+
+  <form hx-post="/admin/session/{{ session.id }}/players"
+        hx-target="#board"
+        style="margin-top:10px">
+    <input type="hidden" name="name" value="{{ query }}">
+    <button class="btn" type="submit">Create new player "{{ query }}"</button>
+  </form>
+{% endif %}

@@ -1,0 +1,108 @@
+"""Pydantic request and response models for the JSON API (design doc section 8)."""
+
+from __future__ import annotations
+
+import datetime as dt
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class ORMModel(BaseModel):
+    """Response model that can be built straight from a SQLAlchemy row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+# Annotations are written as `dt.date` rather than a bare `date`: a field named
+# `date` would otherwise shadow the imported type when the annotation is
+# evaluated, and resolve to the field's default instead.
+
+
+class SeasonOut(ORMModel):
+    id: int
+    name: str
+    start_date: dt.date
+    end_date: dt.date | None
+
+
+class SeasonCreate(BaseModel):
+    name: str
+    start_date: dt.date
+
+
+class PlayerOut(ORMModel):
+    id: int
+    name: str
+    active: bool
+    merged_into: int | None = None
+
+
+class PlayerMatchOut(ORMModel):
+    player: PlayerOut
+    score: float
+    is_duplicate: bool
+
+
+class PlayerCreate(BaseModel):
+    name: str
+    force: bool = False
+
+
+class SessionCreate(BaseModel):
+    date: dt.date | None = None
+    notes: str | None = None
+
+
+class SessionPlayerOut(ORMModel):
+    player: PlayerOut
+    checked_in_at: dt.datetime
+    checked_out_at: dt.datetime | None
+
+
+class CheckInRequest(BaseModel):
+    player_id: int
+
+
+class TeamIn(BaseModel):
+    player_ids: list[int] = Field(min_length=1)
+    rank: int = Field(ge=1)
+    score: int | None = Field(default=None, ge=0)
+
+
+class TeamOut(ORMModel):
+    team_index: int
+    rank: int
+    score: int | None
+    player_ids: list[int]
+
+
+class GameOut(ORMModel):
+    id: int
+    session_id: int
+    round_number: int
+    players_on_field: int
+    played_at: dt.datetime
+    deleted_at: dt.datetime | None
+    teams: list[TeamOut]
+
+
+class GameCreate(BaseModel):
+    teams: list[TeamIn] = Field(min_length=2)
+    players_on_field: int | None = Field(default=None, ge=1)
+    round_number: int | None = Field(default=None, ge=1)
+    played_at: dt.datetime | None = None
+
+
+class GameUpdate(BaseModel):
+    teams: list[TeamIn] | None = None
+    players_on_field: int | None = Field(default=None, ge=1)
+    round_number: int | None = Field(default=None, ge=1)
+    played_at: dt.datetime | None = None
+
+
+class SessionOut(ORMModel):
+    id: int
+    season_id: int
+    date: dt.date
+    notes: str | None
+    players: list[SessionPlayerOut]
+    games: list[GameOut]

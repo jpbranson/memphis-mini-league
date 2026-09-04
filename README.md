@@ -6,9 +6,32 @@ balanced team generation, and a leaderboard. See
 
 ## Status
 
-Milestone 1 (core + tests) is done: data model, Alembic migrations, TrueSkill
-ratings module, and `recompute_ratings()`. There is no web layer yet, so the
-app is exercised through the test suite and `scripts/demo.py`.
+Milestones 1 and 2 are done.
+
+1. **Core**: data model, Alembic migrations, TrueSkill ratings, `recompute_ratings()`.
+2. **Organizer flow**: create a session, check players in with fuzzy search and
+   duplicate warnings, record results by assigning players to teams, edit and
+   delete rounds.
+
+Not built yet: the public leaderboard and player pages (milestone 3), player
+merge (milestone 4), automatic team generation (milestone 5), and the organizer
+password (milestone 7). Every page is currently unauthenticated, so do not put
+this on a public address yet.
+
+## Run the app
+
+```bash
+uv run alembic upgrade head
+```
+
+```bash
+uv run uvicorn mini_league.web.app:app --factory --port 8022
+```
+
+Open http://localhost:8022. Create a season first, since sessions infer their
+season from their date. Then create a session and work down the board: check
+players in, assign them to team A or B, pick the winner, and record. The
+interactive API docs are at http://localhost:8022/docs.
 
 ## Setup
 
@@ -29,7 +52,7 @@ nothing to activate.
 uv run pytest
 ```
 
-63 tests, about 1.5 seconds. Coverage by file:
+167 tests, about 9 seconds. Coverage by file:
 
 | File | What it checks |
 |---|---|
@@ -37,6 +60,11 @@ uv run pytest
 | `tests/test_models.py` | Schema constraints: uniqueness, foreign keys, composite keys |
 | `tests/test_recompute.py` | Replay correctness, chaining, soft deletes, season isolation, validation |
 | `tests/test_migrations.py` | The migration chain reproduces the models exactly and downgrades cleanly |
+| `tests/test_players.py` | Fuzzy name matching and duplicate prevention |
+| `tests/test_sessions.py` | Season inference, check-in and check-out |
+| `tests/test_game_edits.py` | Editing, deleting, restoring games, and the audit trail |
+| `tests/test_api.py` | The JSON API end to end |
+| `tests/test_pages.py` | The organizer pages and their HTMX partials |
 
 Useful variants:
 
@@ -102,5 +130,10 @@ uv run alembic revision --autogenerate -m "describe the change"
 - `src/mini_league/recompute.py` - `recompute_ratings(season_id)` and `recompute_all_ratings()`
 - `src/mini_league/games.py` - `record_game()` write path (validates, inserts, recomputes)
 - `src/mini_league/db.py` - engine and session factory, with SQLite foreign keys enabled
+- `src/mini_league/players.py` - fuzzy search and duplicate-safe player creation
+- `src/mini_league/sessions.py` - session creation, check-in and check-out
+- `src/mini_league/seasons.py` - season lookup and creation
+- `src/mini_league/audit.py` - audit entries carrying full before-state
+- `src/mini_league/web/` - FastAPI app, JSON API, Jinja2 templates
 - `alembic/` - migrations
 - `scripts/demo.py` - manual end-to-end smoke test

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Organizer — Mini League{% endblock %}
+{% block body %}
+<h1>Mini League</h1>
+<p class="sub">Organizer view. The public leaderboard arrives in milestone 3.</p>
+
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+{% if current_season %}
+  <div class="card">
+    <div class="row between">
+      <div>
+        <h2 style="margin:0">Current season</h2>
+        <div class="muted small">{{ current_season.name }}, started {{ current_season.start_date }}</div>
+      </div>
+      <a class="btn primary" href="/admin/session/new">New session</a>
+    </div>
+  </div>
+{% else %}
+  <div class="card">
+    <h2>Start a season first</h2>
+    <p class="muted small">Sessions infer their season from their date, so one season must exist.</p>
+    <form method="post" action="/admin/seasons">
+      <label for="season-name">Season name</label>
+      <input type="text" id="season-name" name="name" placeholder="Fall 2026" required>
+      <label for="season-start" style="margin-top:10px">Start date</label>
+      <input type="date" id="season-start" name="start_date" value="{{ today }}" required>
+      <button class="btn primary" style="margin-top:12px" type="submit">Create season</button>
+    </form>
+  </div>
+{% endif %}
+
+<div class="card">
+  <h2>Sessions</h2>
+  {% if sessions %}
+    <ul class="plain">
+      {% for s in sessions %}
+        <li>
+          <span><a href="/admin/session/{{ s.id }}">{{ s.date }}</a>
+            {% if s.notes %}<span class="muted small">{{ s.notes }}</span>{% endif %}
+          </span>
+          <span class="muted small">session {{ s.id }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted small">No sessions yet.</p>
+  {% endif %}
+</div>
+
+{% if seasons|length > 1 %}
+<div class="card">
+  <h2>All seasons</h2>
+  <ul class="plain">
+    {% for s in seasons %}
+      <li><span>{{ s.name }}</span>
+        <span class="muted small">{{ s.start_date }} to {{ s.end_date or "now" }}</span></li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endblock %}

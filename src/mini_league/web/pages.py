@@ -1,0 +1,408 @@
+"""Server-rendered organizer pages (design doc section 7, milestone 2).
+
+Mobile-first Jinja2 templates driven by HTMX. Most actions re-render the whole
+session board rather than patching pieces of it: at the field, a screen that is
+always consistent beats one that is clever.
+
+Auth is milestone 7, so these pages are currently open.
+"""
+
+from __future__ import annotations
+
+from datetime import date as date_type
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy.orm import Session
+
+from .. import games as games_service
+from .. import players as players_service
+from .. import seasons as seasons_service
+from .. import sessions as sessions_service
+from ..models import LeagueSession, Player
+from .deps import get_db, templates
+
+router = APIRouter()
+
+
+def board_context(
+    db: Session,
+    session: LeagueSession,
+    *,
+    error: str | None = None,
+    notice: str | None = None,
+) -> dict:
+    roster = sessions_service.session_roster(db, session.id)
+    present = [sp for sp in roster if sp.checked_out_at is None]
+    away = [sp for sp in roster if sp.checked_out_at is not None]
+    all_games = games_service.session_games(db, session.id, include_deleted=True)
+    return {
+        "session": session,
+        "season": session.season,
+        "present": present,
+        "away": away,
+        "games": [g for g in all_games if g.deleted_at is None],
+        "deleted_games": [g for g in all_games if g.deleted_at is not None],
+        "player_name": lambda pid: db.get(Player, pid).name,
+        "error": error,
+        "notice": notice,
+    }
+
+
+def render_board(
+    request: Request,
+    db: Session,
+    session: LeagueSession,
+    *,
+    error: str | None = None,
+    notice: str | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
+    ctx = board_context(db, session, error=error, notice=notice)
+    ctx["request"] = request
+    return templates.TemplateResponse(
+        request, "partials/board.html", ctx, status_code=status_code
+    )
+
+
+def load_session(db: Session, session_id: int) -> LeagueSession:
+    try:
+        return sessions_service.get_session(db, session_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/", include_in_schema=False)
+def index():
+    """The public leaderboard is milestone 3; for now go straight to the organizer."""
+    return RedirectResponse("/admin", status_code=307)
+
+
+@router.get("/admin", response_class=HTMLResponse)
+def admin_home(request: Request, db: Session = Depends(get_db)):
+    return templates.TemplateResponse(
+        request,
+        "admin_home.html",
+        {
+            "sessions": sessions_service.list_sessions(db),
+            "seasons": seasons_service.list_seasons(db),
+            "current_season": seasons_service.current_season(db),
+            "today": date_type.today(),
+        },
+    )
+
+
+@router.post("/admin/seasons", response_class=HTMLResponse)
+def create_season(
+    request: Request,
+    name: str = Form(...),
+    start_date: date_type = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Minimal season bootstrap. The full seasons screen is milestone 7."""
+    try:
+        seasons_service.create_season(db, name, start_date)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            request,
+            "admin_home.html",
+            {
+                "sessions": sessions_service.list_sessions(db),
+                "seasons": seasons_service.list_seasons(db),
+                "current_season": seasons_service.current_season(db),
+                "today": date_type.today(),
+                "error": str(exc),
+            },
+            status_code=400,
+        )
+    return RedirectResponse("/admin", status_code=303)
+
+
+@router.get("/admin/session/new", response_class=HTMLResponse)
+def new_session_form(request: Request, db: Session = Depends(get_db)):
+    return templates.TemplateResponse(
+        request,
+        "session_new.html",
+        {"today": date_type.today(), "current_season": seasons_service.current_season(db)},
+    )
+
+
+@router.post("/admin/session/new")
+def create_session(
+    request: Request,
+    date: date_type = Form(...),
+    notes: str = Form(default=""),
+    db: Session = Depends(get_db),
+):
+    try:
+        session = sessions_service.create_session(db, date, notes=notes.strip() or None)
+    except seasons_service.NoSeasonError as exc:
+        return templates.TemplateResponse(
+            request,
+            "session_new.html",
+            {
+                "today": date_type.today(),
+                "current_season": None,
+                "error": str(exc),
+            },
+            status_code=400,
+        )
+    return RedirectResponse(f"/admin/session/{session.id}", status_code=303)
+
+
+@router.get("/admin/session/{session_id}", response_class=HTMLResponse)
+def session_detail(request: Request, session_id: int, db: Session = Depends(get_db)):
+    session = load_session(db, session_id)
+    ctx = board_context(db, session)
+    ctx["request"] = request
+    return templates.TemplateResponse(request, "session_detail.html", ctx)
+
+
+@router.get("/admin/session/{session_id}/search", response_class=HTMLResponse)
+def player_search(
+    request: Request, session_id: int, q: str = "", db: Session = Depends(get_db)
+):
+    """Live fuzzy search shown before an organizer creates a new player."""
+    session = load_session(db, session_id)
+    checked_in_ids = {sp.player_id for sp in sessions_service.session_roster(db, session.id)}
+    matches = players_service.search_players(db, q)
+    return templates.TemplateResponse(
+        request,
+        "partials/search_results.html",
+        {
+            "session": session,
+            "matches": matches,
+            "query": q.strip(),
+            "checked_in_ids": checked_in_ids,
+        },
+    )
+
+
+@router.post("/admin/session/{session_id}/checkin", response_class=HTMLResponse)
+def check_in(
+    request: Request,
+    session_id: int,
+    player_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    session = load_session(db, session_id)
+    try:
+        sessions_service.check_in(db, session_id, player_id)
+    except (LookupError, ValueError) as exc:
+        return render_board(request, db, session, error=str(exc), status_code=400)
+    return render_board(request, db, session)
+
+
+@router.post("/admin/session/{session_id}/checkout", response_class=HTMLResponse)
+def check_out(
+    request: Request,
+    session_id: int,
+    player_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    session = load_session(db, session_id)
+    try:
+        sessions_service.check_out(db, session_id, player_id)
+    except LookupError as exc:
+        return render_board(request, db, session, error=str(exc), status_code=400)
+    return render_board(request, db, session)
+
+
+@router.post("/admin/session/{session_id}/players", response_class=HTMLResponse)
+def add_player(
+    request: Request,
+    session_id: int,
+    name: str = Form(...),
+    force: bool = Form(default=False),
+    db: Session = Depends(get_db),
+):
+    """Create a player and check them in, warning on a near-duplicate name."""
+    session = load_session(db, session_id)
+    try:
+        player = players_service.create_player(db, name, force=force)
+    except players_service.DuplicatePlayerError as exc:
+        return templates.TemplateResponse(
+            request,
+            "partials/duplicate_warning.html",
+            {"session": session, "name": name.strip(), "matches": exc.matches},
+            status_code=409,
+        )
+    except ValueError as exc:
+        return render_board(request, db, session, error=str(exc), status_code=400)
+
+    sessions_service.check_in(db, session_id, player.id)
+    return render_board(request, db, session, notice=f"Added {player.name} and checked them in.")
+
+
+def parse_assignments(form) -> dict[int, int]:
+    """Map player_id -> team_index from `assign_<player_id>` form fields."""
+    assignments: dict[int, int] = {}
+    for key, value in form.multi_items():
+        if not key.startswith("assign_"):
+            continue
+        if value in ("0", "1"):
+            assignments[int(key.removeprefix("assign_"))] = int(value)
+    return assignments
+
+
+def build_teams(
+    assignments: dict[int, int], winner: int, score_a: str, score_b: str
+) -> list[games_service.TeamInput]:
+    team_players: dict[int, list[int]] = {0: [], 1: []}
+    for player_id, team_index in sorted(assignments.items()):
+        team_players[team_index].append(player_id)
+
+    def parse_score(raw: str) -> int | None:
+        raw = (raw or "").strip()
+        if not raw:
+            return None
+        try:
+            return int(raw)
+        except ValueError as exc:
+            raise ValueError(f"score {raw!r} is not a number") from exc
+
+    scores = [parse_score(score_a), parse_score(score_b)]
+    return [
+        games_service.TeamInput(
+            player_ids=team_players[i],
+            rank=1 if i == winner else 2,
+            score=scores[i],
+        )
+        for i in (0, 1)
+    ]
+
+
+@router.post("/admin/session/{session_id}/games", response_class=HTMLResponse)
+async def record_result(request: Request, session_id: int, db: Session = Depends(get_db)):
+    session = load_session(db, session_id)
+    form = await request.form()
+    assignments = parse_assignments(form)
+    winner_raw = form.get("winner")
+
+    if winner_raw not in ("0", "1"):
+        return render_board(request, db, session, error="Pick the winning team.", status_code=400)
+
+    try:
+        teams = build_teams(
+            assignments,
+            int(winner_raw),
+            form.get("score_0", ""),
+            form.get("score_1", ""),
+        )
+        on_field_raw = (form.get("players_on_field") or "").strip()
+        game = games_service.record_game(
+            db,
+            session_id,
+            teams,
+            players_on_field=int(on_field_raw) if on_field_raw else None,
+        )
+    except ValueError as exc:
+        return render_board(request, db, session, error=str(exc), status_code=400)
+
+    return render_board(request, db, session, notice=f"Recorded round {game.round_number}.")
+
+
+@router.post("/admin/games/{game_id}/delete", response_class=HTMLResponse)
+def delete_game(request: Request, game_id: int, db: Session = Depends(get_db)):
+    try:
+        game = games_service.get_game(db, game_id)
+        session = game.session
+        games_service.delete_game(db, game_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        return render_board(request, db, session, error=str(exc), status_code=400)
+    return render_board(request, db, session, notice="Round deleted. Ratings replayed.")
+
+
+@router.post("/admin/games/{game_id}/restore", response_class=HTMLResponse)
+def restore_game(request: Request, game_id: int, db: Session = Depends(get_db)):
+    try:
+        game = games_service.get_game(db, game_id)
+        session = game.session
+        games_service.restore_game(db, game_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        return render_board(request, db, session, error=str(exc), status_code=400)
+    return render_board(request, db, session, notice="Round restored.")
+
+
+@router.get("/admin/games/{game_id}/edit", response_class=HTMLResponse)
+def edit_game_form(request: Request, game_id: int, db: Session = Depends(get_db)):
+    try:
+        game = games_service.get_game(db, game_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    teams = sorted(game.teams, key=lambda t: t.team_index)
+    assignment = {pid: t.team_index for t in teams for pid in t.player_ids}
+    # Offer everyone in the game plus anyone currently checked in.
+    candidates = {p.id: p for p in sessions_service.checked_in_players(db, game.session_id)}
+    for pid in assignment:
+        candidates.setdefault(pid, db.get(Player, pid))
+
+    return templates.TemplateResponse(
+        request,
+        "game_edit.html",
+        {
+            "game": game,
+            "session": game.session,
+            "teams": teams,
+            "assignment": assignment,
+            "candidates": sorted(candidates.values(), key=lambda p: p.name),
+            "winner_index": next(t.team_index for t in teams if t.rank == 1),
+        },
+    )
+
+
+@router.post("/admin/games/{game_id}/edit")
+async def apply_game_edit(request: Request, game_id: int, db: Session = Depends(get_db)):
+    try:
+        game = games_service.get_game(db, game_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    form = await request.form()
+    assignments = parse_assignments(form)
+    winner_raw = form.get("winner")
+
+    def rerender(message: str):
+        teams = sorted(game.teams, key=lambda t: t.team_index)
+        candidates = {p.id: p for p in sessions_service.checked_in_players(db, game.session_id)}
+        for t in teams:
+            for pid in t.player_ids:
+                candidates.setdefault(pid, db.get(Player, pid))
+        return templates.TemplateResponse(
+            request,
+            "game_edit.html",
+            {
+                "game": game,
+                "session": game.session,
+                "teams": teams,
+                "assignment": assignments or {pid: t.team_index for t in teams for pid in t.player_ids},
+                "candidates": sorted(candidates.values(), key=lambda p: p.name),
+                "winner_index": int(winner_raw) if winner_raw in ("0", "1") else 0,
+                "error": message,
+            },
+            status_code=400,
+        )
+
+    if winner_raw not in ("0", "1"):
+        return rerender("Pick the winning team.")
+
+    try:
+        teams = build_teams(
+            assignments, int(winner_raw), form.get("score_0", ""), form.get("score_1", "")
+        )
+        on_field_raw = (form.get("players_on_field") or "").strip()
+        games_service.edit_game(
+            db,
+            game_id,
+            teams=teams,
+            players_on_field=int(on_field_raw) if on_field_raw else None,
+        )
+    except ValueError as exc:
+        return rerender(str(exc))
+
+    return RedirectResponse(f"/admin/session/{game.session_id}", status_code=303)

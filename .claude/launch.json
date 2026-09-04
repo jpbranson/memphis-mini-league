@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mini-league",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "uvicorn",
+        "mini_league.web.app:app",
+        "--factory",
+        "--port",
+        "8022"
+      ],
+      "port": 8022
+    }
+  ]
+}

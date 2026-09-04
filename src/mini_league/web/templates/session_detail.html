@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ session.date }} — Mini League{% endblock %}
+{% block body %}
+<div class="row between">
+  <div>
+    <h1>{{ session.date }}</h1>
+    <p class="sub">
+      {{ season.name }}{% if session.notes %} &middot; {{ session.notes }}{% endif %}
+    </p>
+  </div>
+  <a class="btn small" href="/admin">All sessions</a>
+</div>
+
+<div id="board">
+  {% include "partials/board.html" %}
+</div>
+{% endblock %}
