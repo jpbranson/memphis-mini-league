@@ -91,6 +91,22 @@
   ul.plain li:last-child { border-bottom: 0; }
   .scroll { max-height: 19rem; overflow-y: auto; }
 
+  /* An aside that stays folded until someone wants it: the answer is there for
+     the player who asks what the number means, and out of the way for the one
+     who only wants the score. The marker is a plus rather than a triangle so it
+     reads as newsprint rather than as a widget. */
+  details.explain { border-top: 1px solid var(--hair); margin: 16px 0 0; }
+  details.explain > summary {
+    list-style: none; cursor: pointer; padding: 10px 0;
+    font-size: .8rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--faint);
+  }
+  details.explain > summary::-webkit-details-marker { display: none; }
+  details.explain > summary::after { content: " +"; }
+  details.explain[open] > summary::after { content: " \2212"; }
+  details.explain > :last-child { margin-bottom: 20px; }
+  details.explain table.board { margin: 12px 0 14px; }
+
   /* Shirts, not brand colours: pickup teams are told apart by light and dark
      tops, so the controls are the shirts. */
   .seg { display: inline-flex; border: 1.5px solid var(--rule); }

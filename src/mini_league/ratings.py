@@ -132,6 +132,29 @@ def win_probabilities(
     return p, 1.0 - p
 
 
+def win_probability_for_gap(
+    gap: float,
+    *,
+    sigma: float,
+    team_size: int = 1,
+    config: RatingConfig = DEFAULT_RATING_CONFIG,
+) -> float:
+    """How often a side ahead by `gap` displayed points is expected to win.
+
+    For explaining the leaderboard: it turns a difference people can see into
+    odds they can picture. Only the team's total skill enters the model, so the
+    gap is put on one player and everybody else set level; a side carried by one
+    player and a side evenly better by the same total come to the same number.
+    """
+    if team_size < 1:
+        raise ValueError("a team needs at least one player")
+    env = make_env(config)
+    level = Rating(config.mu, sigma)
+    ahead = [Rating(config.mu + gap / config.display_scale, sigma)]
+    ahead.extend([level] * (team_size - 1))
+    return win_probability(env, ahead, [level] * team_size)
+
+
 def match_quality(env: TrueSkill, teams: Sequence[Sequence[Rating]]) -> float:
     """TrueSkill's draw-probability-based match quality (0..1, higher = more even)."""
     return env.quality([list(t) for t in teams])
@@ -160,4 +183,5 @@ __all__ = [
     "rate_game",
     "win_probabilities",
     "win_probability",
+    "win_probability_for_gap",
 ]

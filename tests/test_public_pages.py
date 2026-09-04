@@ -271,3 +271,82 @@ def test_rating_explanation_works_through_the_players_own_numbers(
 def test_no_explanation_for_a_player_without_games(client, api_season, make_api_players):
     (ada,) = make_api_players("Ada")
     assert "How the rating works" not in text(client.get(f"/players/{ada}"))
+
+
+def test_the_longer_explanation_is_folded_away_until_asked_for(
+    client, page_session, make_api_players
+):
+    ada, ben = make_api_players("Ada", "Ben")
+    check_in_all(client, page_session, [ada, ben])
+    play_round(client, page_session, [ada], [ben])
+
+    body = squash(text(client.get(f"/players/{ada}")))
+    assert '<details class="explain">' in body
+    assert "What the numbers actually mean" in body
+    # Folded: someone who only wants the score never has to read it.
+    assert "<details class=\"explain\" open>" not in body
+
+
+def test_the_explanation_separates_the_floor_from_the_best_guess(
+    client, page_session, make_api_players
+):
+    ada, ben = make_api_players("Ada", "Ben")
+    check_in_all(client, page_session, [ada, ben])
+    play_round(client, page_session, [ada], [ben])
+
+    detail = client.get(f"/api/players/{ada}").json()["seasons"][0]
+    body = squash(text(client.get(f"/players/{ada}")))
+
+    assert "is <em>at least</em> this good" in body
+    # The unmarked-down figure is quoted, and it is higher than the rating shown.
+    guess = round(detail["mu"] * 40)
+    assert f"would put Ada at {guess} rather than {detail['rating']}" in body
+    assert guess > detail["rating"]
+
+
+def test_the_explanation_quotes_odds_for_the_format_the_league_plays(
+    client, page_session, make_api_players
+):
+    ada, ben, cleo, dev = make_api_players("Ada", "Ben", "Cleo", "Dev")
+    check_in_all(client, page_session, [ada, ben, cleo, dev])
+    play_round(client, page_session, [ada, ben], [cleo, dev])
+
+    body = squash(text(client.get(f"/players/{ada}")))
+    assert "Wins a 1v1" in body
+    assert "Wins a 2v2" in body  # this league's own format, not a hardcoded 3v3
+    for gap in (100, 200, 400):
+        assert f"{gap} points" in body
+
+    # The 1v1 column beats the team column on every row: the edge dilutes.
+    rows = re.findall(
+        r"<td>(\d+) points</td> <td class=\"num\">(\d+)%</td> <td class=\"num\">(\d+)%</td>",
+        body,
+    )
+    assert len(rows) == 3
+    assert all(int(solo) > int(team) > 50 for _, solo, team in rows)
+
+
+def test_a_player_with_no_games_is_not_offered_the_explanation(
+    client, api_season, make_api_players
+):
+    (ada,) = make_api_players("Ada")
+    body = text(client.get(f"/players/{ada}"))
+    assert "What the numbers actually mean" not in body
+
+
+def test_the_explanation_sits_between_the_chart_and_the_games(
+    client, page_session, make_api_players
+):
+    """Read the shape of your season, then what it means, then the detail."""
+    ada, ben = make_api_players("Ada", "Ben")
+    check_in_all(client, page_session, [ada, ben])
+    play_round(client, page_session, [ada], [ben])
+    play_round(client, page_session, [ada], [ben])
+
+    body = text(client.get(f"/players/{ada}"))
+    assert (
+        body.index('id="ratingChart"')
+        < body.index("How the rating works")
+        < body.index("What the numbers actually mean")
+        < body.index("<h2>Games</h2>")
+    )

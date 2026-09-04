@@ -230,6 +230,59 @@ def test_session_detail_notes_substitutes(client, page_session, make_api_players
     assert "subs rotating" in squash(text(client.get(f"/sessions/{page_session}")))
 
 
+def test_session_detail_shows_what_each_side_was_rated_beforehand(
+    client, page_session, make_api_players
+):
+    ada, ben, cleo, dev = make_api_players("Ada", "Ben", "Cleo", "Dev")
+    check_in_all(client, page_session, [ada, ben, cleo, dev])
+    play_round(client, page_session, [ada, ben], [cleo, dev], score=(5, 3))
+
+    body = squash(text(client.get(f"/sessions/{page_session}")))
+    assert "collective rating as it stood before that round" in body
+    # Nobody had played, so both sides were two starting ratings.
+    assert body.count('<span class="rating" style="white-space:nowrap">0</span>') == 2
+
+
+def test_session_detail_ratings_are_the_ones_from_the_time_not_todays(
+    client, page_session, make_api_players
+):
+    """Read back later, a round still shows the standing its teams were picked on."""
+    ada, ben, cleo, dev = make_api_players("Ada", "Ben", "Cleo", "Dev")
+    check_in_all(client, page_session, [ada, ben, cleo, dev])
+    play_round(client, page_session, [ada, ben], [cleo, dev], score=(5, 3))
+    play_round(client, page_session, [ada, ben], [cleo, dev], score=(5, 1))
+
+    body = squash(text(client.get(f"/sessions/{page_session}")))
+    shown = [
+        int(n)
+        for n in re.findall(r'class="rating" style="white-space:nowrap">(-?\d+)<', body)
+    ]
+    assert len(shown) == 4
+    # Round one: everyone new, so both sides at the starting rating. Round two:
+    # the winners are worth more than they were and the losers less.
+    assert shown[0] == shown[1] == 0
+    assert shown[2] > shown[0]
+    assert shown[3] < shown[1]
+
+    # And none of them is the pair's rating as it stands now, after both rounds.
+    current = sum(
+        client.get(f"/api/players/{pid}").json()["seasons"][0]["rating"]
+        for pid in (ada, ben)
+    )
+    assert current not in shown
+
+
+def test_session_detail_leaves_out_a_deleted_round(client, page_session, make_api_players):
+    ada, ben, cleo, dev = make_api_players("Ada", "Ben", "Cleo", "Dev")
+    check_in_all(client, page_session, [ada, ben, cleo, dev])
+    play_round(client, page_session, [ada, ben], [cleo, dev], score=(5, 3))
+    game_id = client.get(f"/api/sessions/{page_session}").json()["games"][0]["id"]
+    client.post(f"/admin/games/{game_id}/delete")
+
+    body = squash(text(client.get(f"/sessions/{page_session}")))
+    assert 'class="rating" style="white-space:nowrap"' not in body
+
+
 def test_session_history_is_public(visitor, tmp_path):
     assert visitor.get("/sessions").status_code == 200
 

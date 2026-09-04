@@ -29,7 +29,7 @@ from .. import seasons as seasons_service
 from .. import sessions as sessions_service
 from .. import teams as teams_service
 from ..models import LeagueSession, Player
-from ..ratings import display_rating
+from ..ratings import display_rating, win_probability_for_gap
 from ..recompute import recompute_all_ratings
 from ..settings import DEFAULT_RATING_CONFIG, RatingConfig, TeamGenConfig
 from . import auth
@@ -42,6 +42,10 @@ DEFAULT_MIN_GAMES = 5
 # before anyone changes it. Both fields stay editable per round.
 DEFAULT_TEAM_SIZE = "3"
 DEFAULT_MAX_ON_FIELD = 3
+
+# Rating gaps worth quoting odds for on a player page: one small enough to be
+# noise, one that decides most games, and one nobody should expect to overcome.
+EXPLAINED_GAPS = (100, 200, 400)
 
 
 # --- shared helpers -------------------------------------------------------------
@@ -339,6 +343,22 @@ def player_page(
             },
         )
 
+    # What a gap on the board is worth in games, quoted for the format this
+    # league plays and the uncertainty it has actually reached.
+    odds = []
+    if chosen:
+        sigma = leaderboard_service.typical_sigma(db, chosen.season.id)
+        team_size = leaderboard_service.typical_team_size(db, chosen.season.id)
+        odds = [
+            {
+                "gap": gap,
+                "team_size": team_size,
+                "solo": win_probability_for_gap(gap, sigma=sigma, team_size=1),
+                "team": win_probability_for_gap(gap, sigma=sigma, team_size=team_size),
+            }
+            for gap in EXPLAINED_GAPS
+        ]
+
     return templates.TemplateResponse(
         request,
         "player.html",
@@ -347,6 +367,13 @@ def player_page(
             "summaries": summaries,
             "current": chosen,
             "points": points,
+            "odds": odds,
+            "mu_rating": (
+                round(chosen.mu * DEFAULT_RATING_CONFIG.display_scale
+                      + DEFAULT_RATING_CONFIG.display_offset)
+                if chosen
+                else None
+            ),
             "appearances": (
                 leaderboard_service.player_games(db, player_id, chosen.season.id)
                 if chosen
@@ -1203,6 +1230,9 @@ def session_history_page(request: Request, session_id: int, db: Session = Depend
             "roster": sessions_service.session_roster(db, session_id),
             "player_name": lambda pid: db.get(Player, pid).name,
             "rating_of": rating_lookup(db, session.season_id),
+            "team_ratings": leaderboard_service.team_ratings_before_each_game(
+                db, session_id
+            ),
         },
     )
 

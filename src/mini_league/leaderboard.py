@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from statistics import median
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -240,3 +241,65 @@ def all_time_record(db: Session, player_id: int) -> dict:
         "games_played": row[2],
         "seasons_played": row[3],
     }
+
+
+def typical_team_size(db: Session, season_id: int, default: int = 3) -> int:
+    """The size most of a season's games were played at.
+
+    Used to explain what a rating gap is worth in the format this league
+    actually plays; a 2v2 league and a 5v5 league get very different answers
+    out of the same gap.
+    """
+    row = db.execute(
+        select(Game.players_on_field, func.count())
+        .join(LeagueSession, LeagueSession.id == Game.session_id)
+        .where(LeagueSession.season_id == season_id, Game.deleted_at.is_(None))
+        .group_by(Game.players_on_field)
+        .order_by(func.count().desc(), Game.players_on_field.desc())
+    ).first()
+    return row[0] if row is not None else default
+
+
+def typical_sigma(
+    db: Session, season_id: int, config: RatingConfig = DEFAULT_RATING_CONFIG
+) -> float:
+    """Median uncertainty in a season, so odds are quoted for the league as it stands."""
+    sigmas = [row.sigma for row in season_ratings(db, season_id, config).values()]
+    return median(sigmas) if sigmas else config.sigma
+
+
+def team_ratings_before_each_game(db: Session, session_id: int) -> dict[int, dict[int, int]]:
+    """Each side's collective rating in a session's games, as it stood beforehand.
+
+    Keyed by game id, then team index. The numbers come from `rating_history`,
+    which holds what the league believed about every player at the moment the
+    game was rated, so a session read back months later still shows the standing
+    the teams were picked on rather than today's.
+
+    The total is a plain sum of the displayed ratings, matching the team
+    strengths the organizer sees when picking sides. A roster carrying a sub
+    therefore sums higher than the side it faced; the page says how many were on
+    the field so that reads as the extra body it is.
+    """
+    rows = db.execute(
+        select(
+            GameTeam.game_id,
+            GameTeam.team_index,
+            RatingHistory.mu_before,
+            RatingHistory.sigma_before,
+        )
+        .join(GameTeamPlayer, GameTeamPlayer.game_team_id == GameTeam.id)
+        .join(Game, Game.id == GameTeam.game_id)
+        .join(
+            RatingHistory,
+            (RatingHistory.game_id == GameTeam.game_id)
+            & (RatingHistory.player_id == GameTeamPlayer.player_id),
+        )
+        .where(Game.session_id == session_id, Game.deleted_at.is_(None))
+    ).all()
+
+    totals: dict[int, dict[int, int]] = {}
+    for game_id, team_index, mu, sigma in rows:
+        sides = totals.setdefault(game_id, {})
+        sides[team_index] = sides.get(team_index, 0) + display_rating(Rating(mu, sigma))
+    return totals

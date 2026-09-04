@@ -10,6 +10,10 @@
 </p>
 
 {% if games %}
+  <p class="muted small" style="margin:0 0 12px">
+    Each side&rsquo;s number is its collective rating as it stood before that
+    round, which is what the teams were picked on.
+  </p>
   {% for game in games %}
     <div style="margin-bottom:16px">
       <div class="row between">
@@ -37,13 +41,20 @@
         {% endif %}
       </div>
       {% for team in game.teams|sort(attribute="team_index") %}
-        <div style="margin-top:3px" class="small">
-          <span class="{{ 'shirt-light' if team.team_index == 0 else 'shirt-dark' }}">{{
-            "Light" if team.team_index == 0 else "Dark" }}</span>
-          {% if team.score is not none %}<b class="cond">{{ team.score }}</b>{% endif %}
-          {% if team.rank == 1 %}<b>won</b>{% endif %}
-          {% for pid in team.player_ids %}<a
-            href="/players/{{ pid }}">{{ player_name(pid) }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+        <div style="margin-top:3px; gap:10px; align-items:baseline"
+             class="row between small">
+          <span>
+            <span class="{{ 'shirt-light' if team.team_index == 0 else 'shirt-dark' }}">{{
+              "Light" if team.team_index == 0 else "Dark" }}</span>
+            {% if team.score is not none %}<b class="cond">{{ team.score }}</b>{% endif %}
+            {% if team.rank == 1 %}<b>won</b>{% endif %}
+            {% for pid in team.player_ids %}<a
+              href="/players/{{ pid }}">{{ player_name(pid) }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+          </span>
+          {% set before = team_ratings.get(game.id, {}).get(team.team_index) %}
+          {% if before is not none %}
+            <span class="rating" style="white-space:nowrap">{{ before }}</span>
+          {% endif %}
         </div>
       {% endfor %}
     </div>

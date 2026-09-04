@@ -40,6 +40,82 @@
   <canvas id="ratingChart" height="200" style="margin-top:18px"></canvas>
 {% endif %}
 
+<h2>How the rating works</h2>
+<p class="small">
+  Skill starts at {{ "%.0f"|format(config.mu) }} and moves with every result.
+  Beating someone well above you moves it further than beating someone you were
+  meant to beat. Uncertainty starts at {{ "%.2f"|format(config.sigma) }} and
+  shrinks as you play, so a newcomer swings about and a regular barely moves.
+</p>
+<p class="small">
+  The rating is skill minus {{ "%.0f"|format(config.conservative_k) }} times the
+  uncertainty, times {{ "%.0f"|format(config.display_scale) }}. For
+  {{ player.name }}: ({{ "%.2f"|format(current.mu) }} &minus;
+  {{ "%.0f"|format(config.conservative_k) }} &times; {{ "%.2f"|format(current.sigma) }})
+  &times; {{ "%.0f"|format(config.display_scale) }} = <b>{{ current.rating }}</b>.
+  Subtracting the uncertainty is deliberate: one good morning should not put you
+  top. Only wins and losses count, never the scores.
+</p>
+
+<details class="explain">
+  <summary>What the numbers actually mean</summary>
+  <p class="small">
+    <b>Skill</b> is a guess at something nobody can see directly: how much you
+    help a side win. The app never measures it, it only infers it from results,
+    and the number has no units you would feel on the pitch.
+  </p>
+  <p class="small">
+    <b>Uncertainty</b> is how sure that guess is, and the <b>rating</b> is the
+    two put together, deliberately pessimistically. Read it as
+    &ldquo;{{ player.name }} is <em>at least</em> this good&rdquo;, not
+    &ldquo;{{ player.name }} is this good&rdquo;. Taking the guess at face value
+    would put {{ player.name }} at {{ mu_rating }} rather than
+    {{ current.rating }}; everyone is marked down the same way, so the order
+    stays fair even though every number is an understatement.
+  </p>
+  <p class="small">
+    That is why turning up raises your rating even when you win as often as you
+    lose: the uncertainty shrinks. Early in a season most of a climb is the
+    league growing surer of you rather than you getting better, and a player
+    with four games sits low because little is known, not because they are bad.
+  </p>
+  {% if odds %}
+    <p class="small">
+      Only the totals of the two sides matter, never who on them carries the
+      difference. At the uncertainty this league has reached, a side ahead by:
+    </p>
+    <table class="board">
+      <thead>
+        <tr>
+          <th>Gap on the board</th>
+          <th class="num">Wins a 1v1</th>
+          <th class="num">Wins a {{ odds[0].team_size }}v{{ odds[0].team_size }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in odds %}
+          <tr>
+            <td>{{ o.gap }} points</td>
+            <td class="num">{{ "%.0f"|format(o.solo * 100) }}%</td>
+            <td class="num">{{ "%.0f"|format(o.team * 100) }}%</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="small">
+      Your own edge dilutes across your team-mates, which is the room the
+      balancer works in: it can hand the best player on the day three of the
+      weakest and still call it even.
+    </p>
+  {% endif %}
+  <p class="small">
+    Two things the rating is not. It is not a table of wins &mdash; beating a
+    strong side alongside weak team-mates is worth more than the reverse, so two
+    players on the same record can sit well apart. And it is not a career total:
+    every season starts everyone over.
+  </p>
+</details>
+
 <h2>Games</h2>
 {% if appearances %}
   <ul class="plain">
@@ -67,23 +143,6 @@
 {% else %}
   <p class="muted small">None this season.</p>
 {% endif %}
-
-<h2>How the rating works</h2>
-<p class="small">
-  Skill starts at {{ "%.0f"|format(config.mu) }} and moves with every result.
-  Beating someone well above you moves it further than beating someone you were
-  meant to beat. Uncertainty starts at {{ "%.2f"|format(config.sigma) }} and
-  shrinks as you play, so a newcomer swings about and a regular barely moves.
-</p>
-<p class="small">
-  The rating is skill minus {{ "%.0f"|format(config.conservative_k) }} times the
-  uncertainty, times {{ "%.0f"|format(config.display_scale) }}. For
-  {{ player.name }}: ({{ "%.2f"|format(current.mu) }} &minus;
-  {{ "%.0f"|format(config.conservative_k) }} &times; {{ "%.2f"|format(current.sigma) }})
-  &times; {{ "%.0f"|format(config.display_scale) }} = <b>{{ current.rating }}</b>.
-  Subtracting the uncertainty is deliberate: one good morning should not put you
-  top. Only wins and losses count, never the scores.
-</p>
 
 {% if points|length > 1 %}
 <script src="/static/chart.min.js"></script>

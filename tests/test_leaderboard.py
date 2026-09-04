@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from datetime import date
+from statistics import median
 
 import pytest
 
-from mini_league.games import TeamInput, record_game
+from mini_league.games import TeamInput, delete_game, record_game
 from mini_league.leaderboard import (
     all_time_record,
     current_ratings,
@@ -15,6 +16,9 @@ from mini_league.leaderboard import (
     player_seasons,
     rating_history,
     starting_rating,
+    team_ratings_before_each_game,
+    typical_sigma,
+    typical_team_size,
 )
 from mini_league.models import LeagueSession, Season
 from mini_league.ratings import display_rating
@@ -180,3 +184,81 @@ def test_seasons_are_reported_separately(db, season, league_session, make_player
     assert len(rating_history(db, a.id, season.id)) == 1
     assert len(rating_history(db, a.id, winter.id)) == 1
     assert leaderboard(db, winter.id)[0].games_played == 1
+
+
+# --- describing the season's shape, for the rating explainer ---------------------
+
+
+def test_typical_team_size_is_the_size_most_games_were_played_at(
+    db, season, league_session, make_players
+):
+    a, b, c, d, e, f = make_players(6)
+    play(db, league_session.id, [a, b, c], [d, e, f])
+    play(db, league_session.id, [a, b, c], [d, e, f])
+    play(db, league_session.id, [a, b], [c, d])
+
+    assert typical_team_size(db, season.id) == 3
+
+
+def test_typical_team_size_ignores_deleted_games(db, season, league_session, make_players):
+    a, b, c, d = make_players(4)
+    doomed = play(db, league_session.id, [a, b], [c, d])
+    play(db, league_session.id, [a], [b])
+    delete_game(db, doomed.id)
+
+    assert typical_team_size(db, season.id) == 1
+
+
+def test_typical_team_size_falls_back_when_nothing_has_been_played(db, season):
+    assert typical_team_size(db, season.id, default=4) == 4
+
+
+def test_typical_sigma_is_the_median_of_the_season(db, season, league_session, make_players):
+    a, b = make_players(2)
+    play(db, league_session.id, [a], [b])
+
+    sigmas = sorted(r.sigma for r in leaderboard(db, season.id, min_games=0))
+    assert typical_sigma(db, season.id) == pytest.approx(median(sigmas))
+    # Two games in, the league is already surer than it was of a newcomer.
+    assert typical_sigma(db, season.id) < starting_rating().sigma
+
+
+def test_typical_sigma_of_an_empty_season_is_the_starting_uncertainty(db, season):
+    assert typical_sigma(db, season.id) == pytest.approx(starting_rating().sigma)
+
+
+def test_team_ratings_before_each_game_sum_the_pre_game_standings(
+    db, season, league_session, make_players
+):
+    a, b, c, d = make_players(4)
+    first = play(db, league_session.id, [a, b], [c, d])
+    second = play(db, league_session.id, [a, b], [c, d])
+
+    totals = team_ratings_before_each_game(db, league_session.id)
+    start = display_rating(starting_rating())
+
+    # Round one: nobody had played, so both sides are two starting ratings.
+    assert totals[first.id] == {0: 2 * start, 1: 2 * start}
+    # Round two sees round one's result: the winners are worth more, losers less.
+    assert totals[second.id][0] > totals[first.id][0]
+    assert totals[second.id][1] < totals[first.id][1]
+
+
+def test_team_ratings_before_each_game_are_not_the_current_ones(
+    db, season, league_session, make_players
+):
+    a, b, c, d = make_players(4)
+    first = play(db, league_session.id, [a, b], [c, d])
+    play(db, league_session.id, [a, b], [c, d])
+
+    totals = team_ratings_before_each_game(db, league_session.id)
+    now = current_ratings(db, season.id, [a.id, b.id])
+    assert totals[first.id][0] != sum(display_rating(r) for r in now.values())
+
+
+def test_team_ratings_skip_a_deleted_game(db, season, league_session, make_players):
+    a, b, c, d = make_players(4)
+    doomed = play(db, league_session.id, [a, b], [c, d])
+    delete_game(db, doomed.id)
+
+    assert team_ratings_before_each_game(db, league_session.id) == {}

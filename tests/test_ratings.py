@@ -17,6 +17,7 @@ from mini_league.ratings import (
     rate_game,
     win_probabilities,
     win_probability,
+    win_probability_for_gap,
 )
 from mini_league.settings import RatingConfig
 
@@ -252,3 +253,49 @@ def test_uncertain_player_is_penalized_on_display():
     steady = Rating(27, 2)
     assert hot_rookie.mu > steady.mu
     assert display_rating(hot_rookie) < display_rating(steady)
+
+
+# --- turning a gap on the board back into odds -----------------------------------
+
+
+def test_no_gap_is_a_coin_flip():
+    assert win_probability_for_gap(0, sigma=3.0) == pytest.approx(0.5)
+
+
+def test_a_bigger_gap_wins_more_often():
+    odds = [win_probability_for_gap(gap, sigma=3.0) for gap in (0, 100, 200, 400)]
+    assert odds == sorted(odds)
+    assert all(0.5 <= p < 1.0 for p in odds)
+
+
+def test_a_gap_matters_less_the_more_players_share_the_pitch():
+    """The point of the table: your edge dilutes across team-mates."""
+    solo = win_probability_for_gap(200, sigma=3.0, team_size=1)
+    threes = win_probability_for_gap(200, sigma=3.0, team_size=3)
+    fives = win_probability_for_gap(200, sigma=3.0, team_size=5)
+    assert solo > threes > fives > 0.5
+
+
+def test_it_does_not_matter_who_on_the_team_carries_the_gap(env):
+    """Only the team totals enter the model, which is what the page claims."""
+    sigma, gap = 3.0, 300.0
+    spread = gap / 40 / 3
+    evenly_better = [Rating(25 + spread, sigma)] * 3
+    level = [Rating(25, sigma)] * 3
+
+    assert win_probability(env, evenly_better, level) == pytest.approx(
+        win_probability_for_gap(gap, sigma=sigma, team_size=3)
+    )
+
+
+def test_gap_odds_follow_the_display_scale():
+    """Halving the scale doubles the points a given edge is worth."""
+    cfg = RatingConfig(display_scale=20)
+    assert win_probability_for_gap(100, sigma=3.0, config=cfg) == pytest.approx(
+        win_probability_for_gap(200, sigma=3.0)
+    )
+
+
+def test_gap_odds_reject_an_empty_team():
+    with pytest.raises(ValueError, match="at least one player"):
+        win_probability_for_gap(100, sigma=3.0, team_size=0)
