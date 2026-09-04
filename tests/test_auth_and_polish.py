@@ -729,3 +729,17 @@ def test_the_canonical_url_drops_the_query(visitor):
     body = visitor.get("/login", params={"next": "//example.com"}).text
     assert '<meta property="og:url" content="http://testserver/login">' in body
     assert "example.com" not in body
+
+
+def test_the_container_trusts_the_proxy_that_terminates_tls():
+    """Pinned because losing it fails silently and only in production.
+
+    uvicorn honours X-Forwarded-Proto only from 127.0.0.1 unless told
+    otherwise, and the proxy is not on loopback. Without this the app builds
+    http:// absolute URLs for an https:// site, which is invisible on every
+    page except the preview metadata, and there it shows up as a blank card.
+    """
+    from pathlib import Path
+
+    dockerfile = (Path(__file__).resolve().parent.parent / "Dockerfile").read_text()
+    assert "--forwarded-allow-ips" in dockerfile
