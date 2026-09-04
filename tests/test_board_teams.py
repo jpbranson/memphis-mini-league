@@ -201,7 +201,7 @@ def test_panel_is_wired_to_refresh_on_change(client, page_session, make_api_play
     body = text(client.get(f"/admin/session/{page_session}"))
     assert 'id="balance-preview"' in body
     assert f'hx-post="/admin/session/{page_session}/preview"' in body
-    assert 'hx-trigger="change from:#record-form"' in body
+    assert 'hx-trigger="change from:#record-form, change from:#format-form"' in body
 
 
 def test_assignment_survives_a_rejected_result(client, page_session, make_api_players):

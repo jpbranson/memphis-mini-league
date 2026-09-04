@@ -362,3 +362,120 @@ def test_manual_out_is_listed_without_claiming_it_was_automatic(
     )
     assert bench_names(body) == ["C"]
     assert "most rounds played today" not in body
+
+
+# --- the on-field limit actually reaches the recorded game -----------------------
+
+
+def stored_on_field(client, session_id: int) -> int:
+    return client.get(f"/api/sessions/{session_id}").json()["games"][0]["players_on_field"]
+
+
+def record_balanced(client, session_id, ids, max_on_field="5", team_size=""):
+    balanced = text(
+        client.post(
+            f"/admin/session/{session_id}/balance",
+            data={"team_size": team_size, "max_on_field": max_on_field},
+        )
+    )
+    data = {f"assign_{pid}": side for pid, side in assignments_in(balanced).items()}
+    data.update({"winner": "0", "max_on_field": max_on_field, "team_size": team_size})
+    return client.post(f"/admin/session/{session_id}/games", data=data)
+
+
+def test_on_field_limit_is_applied_when_recording(client, page_session, make_api_players):
+    """Twelve players at five a side must record as five, not six."""
+    ids = make_api_players(*[f"P{i}" for i in range(12)])
+    check_in_all(client, page_session, ids)
+    r = record_balanced(client, page_session, ids, max_on_field="5")
+    assert r.status_code == 200
+    assert stored_on_field(client, page_session) == 5
+
+
+def test_smaller_rosters_record_their_own_size(client, page_session, make_api_players):
+    """A 3v3 under a limit of 5 is three a side, not five."""
+    ids = make_api_players(*[f"P{i}" for i in range(6)])
+    check_in_all(client, page_session, ids)
+    record_balanced(client, page_session, ids, max_on_field="5")
+    assert stored_on_field(client, page_session) == 3
+
+
+def test_uneven_rosters_record_the_smaller_side(client, page_session, make_api_players):
+    ids = make_api_players(*[f"P{i}" for i in range(7)])
+    check_in_all(client, page_session, ids)
+    record_balanced(client, page_session, ids, max_on_field="5")
+    assert stored_on_field(client, page_session) == 3
+
+
+def test_blank_limit_means_everyone_on_the_roster_plays(client, page_session, make_api_players):
+    ids = make_api_players(*[f"P{i}" for i in range(12)])
+    check_in_all(client, page_session, ids)
+    record_balanced(client, page_session, ids, max_on_field="")
+    assert stored_on_field(client, page_session) == 6
+
+
+def test_the_prediction_uses_the_same_limit(client, page_session, make_api_players):
+    """Otherwise the panel would promise one thing and the game record another."""
+    ids = make_api_players(*[f"P{i}" for i in range(12)])
+    check_in_all(client, page_session, ids)
+    assignment = {f"assign_{pid}": ("0" if i < 6 else "1") for i, pid in enumerate(ids)}
+
+    capped = squash(
+        text(
+            client.post(
+                f"/admin/session/{page_session}/preview",
+                data={**assignment, "max_on_field": "5"},
+            )
+        )
+    )
+    uncapped = squash(
+        text(
+            client.post(
+                f"/admin/session/{page_session}/preview",
+                data={**assignment, "max_on_field": ""},
+            )
+        )
+    )
+    assert "at 5 per team on the field" in capped
+    assert "at 6 per team on the field" in uncapped
+
+
+def test_the_duplicate_lower_field_is_gone(client, page_session, make_api_players):
+    """One place to say how many are on the field, not two that disagree."""
+    ids = make_api_players("A", "B")
+    check_in_all(client, page_session, ids)
+    body = text(client.get(f"/admin/session/{page_session}"))
+    assert 'name="players_on_field"' not in body
+    assert body.count('name="max_on_field"') == 1
+
+
+def test_record_form_submits_the_format_fields(client, page_session, make_api_players):
+    ids = make_api_players("A", "B")
+    check_in_all(client, page_session, ids)
+    body = squash(text(client.get(f"/admin/session/{page_session}")))
+    assert 'id="record-form"' in body
+    assert 'hx-include="#format-form"' in body
+
+
+def test_edit_page_uses_the_same_limit(client, page_session, make_api_players):
+    ids = make_api_players(*[f"P{i}" for i in range(12)])
+    check_in_all(client, page_session, ids)
+    record_balanced(client, page_session, ids, max_on_field="5")
+
+    board = text(client.get(f"/admin/session/{page_session}"))
+    game_id = int(re.search(r"/admin/games/(\d+)/edit", board).group(1))
+    edit_page = text(client.get(f"/admin/games/{game_id}/edit"))
+    assert 'name="players_on_field"' not in edit_page
+    assert 'name="max_on_field" value="5"' in squash(edit_page)
+
+    assignment = {
+        int(m.group(1)): m.group(2)
+        for m in re.finditer(
+            r'name="assign_(\d+)" value="(0|1)"\s*checked', squash(edit_page)
+        )
+    }
+    data = {f"assign_{pid}": side for pid, side in assignment.items()}
+    data.update({"winner": "0", "max_on_field": "4"})
+    r = client.post(f"/admin/games/{game_id}/edit", data=data, follow_redirects=False)
+    assert r.status_code == 303
+    assert stored_on_field(client, page_session) == 4

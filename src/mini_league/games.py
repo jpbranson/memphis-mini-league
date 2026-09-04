@@ -114,8 +114,13 @@ def _resolve_players_on_field(
     roster_sizes = [len(t.player_ids) for t in teams]
     if players_on_field is None:
         return min(roster_sizes)
-    if players_on_field < 1 or players_on_field > max(roster_sizes):
-        raise ValueError("players_on_field must be between 1 and the largest roster")
+    # Both teams field the same number, so the smaller roster is the ceiling:
+    # a team of three cannot put four on the pitch.
+    if players_on_field < 1 or players_on_field > min(roster_sizes):
+        raise ValueError(
+            f"players_on_field must be between 1 and {min(roster_sizes)}, "
+            "the size of the smaller roster"
+        )
     return players_on_field
 
 
@@ -204,8 +209,11 @@ def edit_game(
         _replace_teams(db, game, teams)
     elif players_on_field is not None:
         sizes = [len(t.players) for t in game.teams]
-        if players_on_field < 1 or players_on_field > max(sizes):
-            raise ValueError("players_on_field must be between 1 and the largest roster")
+        if players_on_field < 1 or players_on_field > min(sizes):
+            raise ValueError(
+                f"players_on_field must be between 1 and {min(sizes)}, "
+                "the size of the smaller roster"
+            )
         game.players_on_field = players_on_field
 
     if round_number is not None:

@@ -90,7 +90,12 @@ def parse_assignments(form) -> dict[int, int]:
     return assignments
 
 
-def matchup(db: Session, session: LeagueSession, assignments: dict[int, int]) -> dict:
+def matchup(
+    db: Session,
+    session: LeagueSession,
+    assignments: dict[int, int],
+    max_on_field: int | None = None,
+) -> dict:
     """Team strengths and predicted result for the current assignment."""
     side_a = [pid for pid, team in assignments.items() if team == 0]
     side_b = [pid for pid, team in assignments.items() if team == 1]
@@ -101,7 +106,9 @@ def matchup(db: Session, session: LeagueSession, assignments: dict[int, int]) ->
         db, session.season_id, side_a + side_b
     )
     summary = teams_service.describe_matchup(
-        [ratings[p] for p in side_a], [ratings[p] for p in side_b]
+        [ratings[p] for p in side_a],
+        [ratings[p] for p in side_b],
+        max_on_field=max_on_field,
     )
 
     # The board rating is deliberately pessimistic about newcomers, while the
@@ -175,7 +182,7 @@ def board_context(
         "player_name": lambda pid: db.get(Player, pid).name,
         "rating_of": rating_lookup(db, session.season_id),
         "assignment": assignment,
-        "matchup": matchup(db, session, assignment),
+        "matchup": matchup(db, session, assignment, DEFAULT_MAX_ON_FIELD),
         "team_size": "",
         "max_on_field": str(DEFAULT_MAX_ON_FIELD),
         "benched": (
@@ -526,7 +533,7 @@ def record_card_context(
         "session": session,
         "present": present,
         "assignment": assignment,
-        "matchup": matchup(db, session, assignment),
+        "matchup": matchup(db, session, assignment, safe_optional_int(max_on_field)),
         "rating_of": rating_lookup(db, session.season_id),
         "balance_notice": notice,
         "team_size": team_size,
@@ -552,6 +559,19 @@ def render_record_card(
         "partials/record_form.html",
         record_card_context(db, session, assignment, **kwargs),
     )
+
+
+def safe_optional_int(raw) -> int | None:
+    """Like parse_optional_int, but a bad value just means "no cap".
+
+    Used on rendering paths, where a half-typed number should not blow up the
+    page; the submit paths validate properly and report the problem.
+    """
+    try:
+        value = parse_optional_int(raw if isinstance(raw, str) else str(raw or ""))
+    except ValueError:
+        return None
+    return value if value is None or value >= 1 else None
 
 
 def parse_optional_int(raw: str | None) -> int | None:
@@ -678,7 +698,14 @@ async def preview_matchup(request: Request, session_id: int, db: Session = Depen
     return templates.TemplateResponse(
         request,
         "partials/balance_panel.html",
-        {"matchup": matchup(db, session, parse_assignments(form))},
+        {
+            "matchup": matchup(
+                db,
+                session,
+                parse_assignments(form),
+                safe_optional_int(form.get("max_on_field")),
+            )
+        },
     )
 
 
@@ -731,12 +758,14 @@ async def record_result(request: Request, session_id: int, db: Session = Depends
         teams = build_teams(
             assignments, int(winner_raw), form.get("score_0", ""), form.get("score_1", "")
         )
-        on_field_raw = (form.get("players_on_field") or "").strip()
         game = games_service.record_game(
             db,
             session_id,
             teams,
-            players_on_field=int(on_field_raw) if on_field_raw else None,
+            players_on_field=teams_service.on_field_for(
+                [len(t.player_ids) for t in teams],
+                parse_optional_int(form.get("max_on_field")),
+            ),
         )
     except ValueError as exc:
         # Keep the assignment so the organizer only has to fix what was wrong.
@@ -789,6 +818,7 @@ def edit_context(db: Session, game, assignments: dict[int, int] | None = None) -
         "assignment": assignment,
         "candidates": sorted(candidates.values(), key=lambda p: p.name),
         "rating_of": rating_lookup(db, game.session.season_id),
+        "max_on_field": str(game.players_on_field),
     }
 
 
@@ -827,12 +857,14 @@ async def apply_game_edit(request: Request, game_id: int, db: Session = Depends(
         teams = build_teams(
             assignments, int(winner_raw), form.get("score_0", ""), form.get("score_1", "")
         )
-        on_field_raw = (form.get("players_on_field") or "").strip()
         games_service.edit_game(
             db,
             game_id,
             teams=teams,
-            players_on_field=int(on_field_raw) if on_field_raw else None,
+            players_on_field=teams_service.on_field_for(
+                [len(t.player_ids) for t in teams],
+                parse_optional_int(form.get("max_on_field")),
+            ),
         )
     except ValueError as exc:
         return rerender(str(exc))

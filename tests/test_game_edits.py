@@ -78,16 +78,36 @@ def test_edit_can_drop_a_player_from_the_game(db, season, league_session, make_p
 
 
 def test_edit_updates_players_on_field(db, league_session, make_players):
-    players = make_players(7)
+    players = make_players(10)
     game = record_game(
         db,
         league_session.id,
-        [TeamInput([p.id for p in players[:3]], 1), TeamInput([p.id for p in players[3:]], 2)],
+        [TeamInput([p.id for p in players[:5]], 1), TeamInput([p.id for p in players[5:]], 2)],
     )
-    assert game.players_on_field == 3
-    edit_game(db, game.id, players_on_field=4)
+    assert game.players_on_field == 5
+    edit_game(db, game.id, players_on_field=4)  # four a side, one sub each
     db.refresh(game)
     assert game.players_on_field == 4
+
+
+def test_on_field_cannot_exceed_the_smaller_roster(db, league_session, make_players):
+    """A team of three cannot put four on the pitch, whatever the other side has."""
+    players = make_players(7)
+    three = [p.id for p in players[:3]]
+    four = [p.id for p in players[3:]]
+
+    with pytest.raises(ValueError, match="the size of the smaller roster"):
+        record_game(
+            db,
+            league_session.id,
+            [TeamInput(three, 1), TeamInput(four, 2)],
+            players_on_field=4,
+        )
+
+    game = record_game(db, league_session.id, [TeamInput(three, 1), TeamInput(four, 2)])
+    assert game.players_on_field == 3
+    with pytest.raises(ValueError, match="the size of the smaller roster"):
+        edit_game(db, game.id, players_on_field=4)
 
 
 def test_edit_metadata_only_keeps_teams(db, league_session, make_players):

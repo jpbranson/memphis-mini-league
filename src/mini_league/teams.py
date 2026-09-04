@@ -216,14 +216,19 @@ def describe_matchup(
     ratings_a: Sequence[Rating],
     ratings_b: Sequence[Rating],
     *,
+    max_on_field: int | None = None,
     rating_config: RatingConfig = DEFAULT_RATING_CONFIG,
 ) -> dict:
-    """Team strengths and the predicted result, for showing next to the teams."""
+    """Team strengths and the predicted result, for showing next to the teams.
+
+    `max_on_field` caps how many of each roster are playing at once; the rest
+    are substitutes, which shows up as partial play.
+    """
     from .ratings import display_rating
 
     env = make_env(rating_config)
     sizes = [len(ratings_a), len(ratings_b)]
-    on_field = min(sizes)
+    on_field = on_field_for(sizes, max_on_field)
     weights = partial_play_weights(sizes, on_field)
     probability = win_probability(env, ratings_a, ratings_b, weights[0], weights[1])
     gap = abs(2 * probability - 1)

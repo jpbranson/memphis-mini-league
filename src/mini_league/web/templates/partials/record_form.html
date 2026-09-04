@@ -15,7 +15,7 @@
              placeholder="auto" inputmode="numeric" autocomplete="off">
     </div>
     <div class="grow" style="min-width:120px">
-      <label for="max_on_field">Max on the field</label>
+      <label for="max_on_field">Most on the field</label>
       <input type="text" id="max_on_field" name="max_on_field" value="{{ max_on_field }}"
              placeholder="5" inputmode="numeric" autocomplete="off">
     </div>
@@ -24,8 +24,8 @@
   <p class="muted small" style="margin:6px 0 0">
     Leave team size on auto to split everyone evenly. Set it smaller than the
     turnout and whoever has played the most rounds today sits out. A roster
-    bigger than the on-field limit means substitutes rotating, not players
-    sent home.
+    bigger than the on-field limit means substitutes rotating, not players sent
+    home. Both the prediction below and the recorded result use these numbers.
   </p>
 </form>
 
@@ -37,8 +37,10 @@
   </p>
 {% endif %}
 
+{# The format fields live in the other form, so pull them in on submit: they
+   decide how many of each roster are on the field when the game is recorded. #}
 <form id="record-form" hx-post="/admin/session/{{ session.id }}/games" hx-target="#board"
-      style="margin-top:12px">
+      hx-include="#format-form" style="margin-top:12px">
   <p class="muted small" style="margin-top:0">
     Players left on "Out" sit this round.
   </p>
@@ -69,8 +71,8 @@
 
   <div id="balance-preview" style="margin-top:12px"
        hx-post="/admin/session/{{ session.id }}/preview"
-       hx-trigger="change from:#record-form"
-       hx-include="#record-form"
+       hx-trigger="change from:#record-form, change from:#format-form"
+       hx-include="#record-form, #format-form"
        hx-target="this"
        hx-swap="innerHTML">
     {% include "partials/balance_panel.html" %}
@@ -92,12 +94,6 @@
       <input type="number" id="score_1" name="score_1" min="0" inputmode="numeric">
     </div>
   </div>
-
-  <label for="players_on_field" style="margin-top:12px">
-    Players per team on the field (optional)
-  </label>
-  <input type="number" id="players_on_field" name="players_on_field" min="1"
-         inputmode="numeric" placeholder="Defaults to the smaller roster">
 
   <button class="btn primary" style="margin-top:12px" type="submit">Record result</button>
 </form>

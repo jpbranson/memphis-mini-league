@@ -50,9 +50,13 @@
       </div>
     </div>
 
-    <label for="players_on_field" style="margin-top:12px">Players per team on the field</label>
-    <input type="number" id="players_on_field" name="players_on_field" min="1"
-           inputmode="numeric" value="{{ game.players_on_field }}">
+    <label for="max_on_field" style="margin-top:12px">Most on the field</label>
+    <input type="text" id="max_on_field" name="max_on_field" value="{{ max_on_field }}"
+           inputmode="numeric" autocomplete="off" placeholder="5">
+    <p class="muted small">
+      Capped by the smaller roster, so a 4v3 records as three a side whatever
+      this says. A bigger roster means substitutes rotating.
+    </p>
 
     <button class="btn primary" style="margin-top:14px" type="submit">Save and replay ratings</button>
     <a class="btn" style="margin-top:14px" href="/admin/session/{{ session.id }}">Cancel</a>
