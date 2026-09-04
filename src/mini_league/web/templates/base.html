@@ -89,6 +89,7 @@
     padding: 7px 0; border-bottom: 1px solid var(--hair);
   }
   ul.plain li:last-child { border-bottom: 0; }
+  ul.plain li.wrap { flex-wrap: wrap; }
   .scroll { max-height: 19rem; overflow-y: auto; }
 
   /* An aside that stays folded until someone wants it: the answer is there for
@@ -140,6 +141,20 @@
   .shirt-dark  { background: var(--dark-shirt);  color: var(--light-shirt); }
 
   .rating { font-variant-numeric: tabular-nums; color: var(--faint); font-size: .88rem; }
+
+  /* WMP / MMP. An outline rather than a fill: a designation says who you match
+     up against, and should not read as loudly as a shirt colour or a score. */
+  .tag {
+    font-weight: 700; text-transform: uppercase; font-size: .68rem;
+    letter-spacing: .06em; padding: 1px 4px; border: 1px solid var(--hair);
+    color: var(--faint); white-space: nowrap;
+  }
+  .tag.today { border-color: var(--rule); color: var(--ink); }
+
+  /* The three-way designation picker, narrower than the shirt picker because
+     it sits beside a name on a phone. */
+  .seg.tight label { padding: 6px 8px; font-size: .7rem; letter-spacing: .03em; }
+  .seg.tight label:has(input:checked) { background: var(--ink); color: var(--paper); }
   .tally { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 1.5rem; }
 
   table.board { width: 100%; border-collapse: collapse; }

@@ -181,7 +181,15 @@ def merge_players(
     config: RatingConfig = DEFAULT_RATING_CONFIG,
     commit: bool = True,
 ) -> AuditLog:
-    """Fold `source` into `target`, replay every season, and log the undo."""
+    """Fold `source` into `target`, replay every season, and log the undo.
+
+    Designations follow the record they belong to. The target keeps its own
+    standing designation, since the merge says the two records are one person
+    and the target is the one being kept. A day-of override travels with the
+    session row it was set on, so where only the source was checked in the
+    override moves across, and where both were the target's row is the one that
+    survives. The snapshot carries the discarded override so undo puts it back.
+    """
     if source_id == target_id:
         raise ValueError("a player cannot be merged into themselves")
 
@@ -205,6 +213,7 @@ def merge_players(
             "session_id": entry.session_id,
             "checked_in_at": _iso(entry.checked_in_at),
             "checked_out_at": _iso(entry.checked_out_at),
+            "designation_override": entry.designation_override,
         }
         for entry in db.scalars(
             select(SessionPlayer).where(
@@ -328,6 +337,7 @@ def undo_merge(
                 player_id=source_id,
                 checked_in_at=_parse(row["checked_in_at"]) or utcnow(),
                 checked_out_at=_parse(row["checked_out_at"]),
+                designation_override=row.get("designation_override"),
             )
         )
 

@@ -10,6 +10,19 @@
       <span class="tally">{{ matchup.rating_b }}</span>
       <span class="shirt-dark">Dark</span></span>
   </div>
+  {% if matchup.has_designations %}
+    {# Only when someone on the pitch has one. Shown whether or not the coed
+       box is ticked, because the organizer moving players by hand needs to see
+       the split they are making just as much as the balancer's. #}
+    <div class="row between small muted" style="margin:0 0 2px">
+      <span>{% for name in matchup.designation_names %}{{
+        matchup.designations_a[name] }} {{ name }}{% if not loop.last %} &middot; {% endif %}{%
+        endfor %}</span>
+      <span>{% for name in matchup.designation_names %}{{
+        matchup.designations_b[name] }} {{ name }}{% if not loop.last %} &middot; {% endif %}{%
+        endfor %}</span>
+    </div>
+  {% endif %}
   <p class="small muted" style="margin:2px 0 0">
     {{ matchup.verdict }}, {{ matchup.players_on_field }} a side.
     {%- if matchup.count_a != matchup.count_b %}

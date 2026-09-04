@@ -3,6 +3,7 @@
 {% block body %}
 <h1>{{ player.name }}</h1>
 <p class="sub">
+  {% if player.designation %}<span class="tag">{{ player.designation }}</span> {% endif %}
   {% if not player.active %}Retired. {% endif %}
   {{ all_time.wins }}&ndash;{{ all_time.losses }} all time
   {%- if all_time.seasons_played > 1 %}, {{ all_time.seasons_played }} seasons{% endif %}.

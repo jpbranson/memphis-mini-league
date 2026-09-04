@@ -30,6 +30,11 @@ class TeamGenConfig:
 
     w_balance: float = 1.0
     w_variety: float = 0.3
+    # Only applies when the organizer asks for an even coed split; a round with
+    # no designations supplied never scores this term at all. Set just under
+    # balance, so evening up WMPs and MMPs is worth about as much as a fair
+    # matchup without ever being allowed to force a lopsided one.
+    w_designation: float = 0.8
     top_n: int = 5
     # A split is only a candidate if its cost is within this much of the best
     # one. Without it, a small group with few possible splits would fill the
@@ -89,6 +94,9 @@ def get_settings() -> Settings:
     team_gen = TeamGenConfig(
         w_balance=_env_float("MINI_LEAGUE_W_BALANCE", team_defaults.w_balance),
         w_variety=_env_float("MINI_LEAGUE_W_VARIETY", team_defaults.w_variety),
+        w_designation=_env_float(
+            "MINI_LEAGUE_W_DESIGNATION", team_defaults.w_designation
+        ),
         top_n=int(_env_float("MINI_LEAGUE_TOP_N", team_defaults.top_n)),
         cost_tolerance=_env_float(
             "MINI_LEAGUE_COST_TOLERANCE", team_defaults.cost_tolerance

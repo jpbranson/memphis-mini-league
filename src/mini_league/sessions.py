@@ -12,6 +12,7 @@ from datetime import date as date_type
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from . import designations
 from .models import LeagueSession, Player, SessionPlayer, utcnow
 from .players import get_player
 from .seasons import season_for_date
@@ -156,6 +157,7 @@ def save_pending_teams(
     *,
     team_size: str = "",
     max_on_field: str = "",
+    even_designations: bool = False,
     commit: bool = True,
 ) -> LeagueSession:
     """Remember the line-up chosen for the round that has not been played yet.
@@ -168,6 +170,7 @@ def save_pending_teams(
         "assignment": {str(pid): side for pid, side in sorted(assignment.items())},
         "team_size": team_size,
         "max_on_field": max_on_field,
+        "even_designations": bool(even_designations),
         "saved_at": utcnow().isoformat(),
     }
     db.flush()
@@ -190,6 +193,7 @@ def load_pending_teams(db: Session, session_id: int) -> dict:
         "assignment": assignment,
         "team_size": stored.get("team_size") or "",
         "max_on_field": stored.get("max_on_field") or "",
+        "even_designations": bool(stored.get("even_designations")),
     }
 
 
@@ -202,3 +206,45 @@ def clear_pending_teams(db: Session, session_id: int, *, commit: bool = True) ->
     db.flush()
     if commit:
         db.commit()
+
+
+def set_session_designation(
+    db: Session,
+    session_id: int,
+    player_id: int,
+    designation: str | None,
+    *,
+    commit: bool = True,
+) -> SessionPlayer:
+    """Set a player's designation for this session only.
+
+    Three answers are storable and all three are different. WMP or MMP override
+    what the player usually is; "none" says they have no designation today, which
+    is not the same as never having had one; and clearing the override entirely
+    hands them back to their standing designation.
+    """
+    entry = db.get(SessionPlayer, (session_id, player_id))
+    if entry is None:
+        raise LookupError(f"player {player_id} is not checked in to session {session_id}")
+
+    entry.designation_override = designations.parse_override(designation)
+    db.flush()
+    if commit:
+        db.commit()
+    return entry
+
+
+def clear_session_designation(
+    db: Session, session_id: int, player_id: int, *, commit: bool = True
+) -> SessionPlayer:
+    """Drop today's override so the player counts as whatever they usually are."""
+    return set_session_designation(db, session_id, player_id, None, commit=commit)
+
+
+def session_designations(db: Session, session_id: int) -> dict[int, str | None]:
+    """Effective designation per checked-in player, for the team balancer."""
+    return {
+        sp.player_id: sp.designation
+        for sp in session_roster(db, session_id)
+        if sp.checked_out_at is None
+    }

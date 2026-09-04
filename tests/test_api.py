@@ -319,3 +319,54 @@ def test_api_move_session_validation(client, api_session):
         == 404
     )
     assert client.patch("/api/sessions/999", json={"season_id": 1}).status_code == 404
+
+
+# --- designations (design doc section 5.4) ---------------------------------------
+
+
+def test_a_player_can_be_created_and_updated_with_a_designation(client):
+    created = client.post(
+        "/api/players", json={"name": "Ada", "designation": "wmp"}
+    ).json()
+    assert created["designation"] == "WMP"
+
+    updated = client.patch(
+        f"/api/players/{created['id']}", json={"designation": "MMP"}
+    ).json()
+    assert updated["designation"] == "MMP"
+
+    # None leaves it alone (a rename must not silently clear it); "" clears it.
+    renamed = client.patch(f"/api/players/{created['id']}", json={"name": "Ada B."}).json()
+    assert renamed["designation"] == "MMP"
+    cleared = client.patch(f"/api/players/{created['id']}", json={"designation": ""}).json()
+    assert cleared["designation"] is None
+
+
+def test_an_unknown_designation_is_a_400(client):
+    created = client.post("/api/players", json={"name": "Ada"}).json()
+    response = client.patch(f"/api/players/{created['id']}", json={"designation": "WNP"})
+    assert response.status_code == 400
+    assert "not a designation" in response.json()["detail"]
+
+
+def test_the_session_endpoint_sets_a_designation_for_the_day(client, api_session):
+    ada = client.post("/api/players", json={"name": "Ada", "designation": "WMP"}).json()
+    client.post(f"/api/sessions/{api_session}/checkin", json={"player_id": ada["id"]})
+
+    body = client.post(
+        f"/api/sessions/{api_session}/designation",
+        json={"player_id": ada["id"], "designation": "none"},
+    ).json()
+    entry = body["players"][0]
+    assert entry["designation"] is None
+    assert entry["designation_override"] == "NONE"
+    assert entry["player"]["designation"] == "WMP"  # the record is untouched
+
+
+def test_designating_someone_who_is_not_here_is_a_404(client, api_session):
+    ada = client.post("/api/players", json={"name": "Ada"}).json()
+    response = client.post(
+        f"/api/sessions/{api_session}/designation",
+        json={"player_id": ada["id"], "designation": "WMP"},
+    )
+    assert response.status_code == 404

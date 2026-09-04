@@ -18,6 +18,15 @@
     </div>
     <button class="btn" type="submit">Make teams</button>
   </div>
+  {# Off unless asked for. Ticked, the balancer weighs an even WMP/MMP split
+     alongside an even matchup; unticked it scores exactly what it always did. #}
+  <label class="row" style="text-transform:none; letter-spacing:0; font-size:.86rem;
+                            gap:8px; margin:10px 0 0; color:var(--ink)">
+    <input type="checkbox" name="even_designations" value="1"
+           style="width:auto; margin:0"
+           {% if even_designations %}checked{% endif %}>
+    Even up {{ designation_names|join("/") }}
+  </label>
 </form>
 
 {% if benched %}
@@ -38,6 +47,10 @@
           <span class="rating">
             {%- if rating_of(sp.player_id).is_new %}&ndash;{% else %}{{ rating_of(sp.player_id).rating }}{% endif -%}
           </span>
+          {%- if sp.designation %}
+            <span class="tag{% if sp.designation_is_for_today %} today{% endif %}">{{
+              sp.designation }}</span>
+          {%- endif %}
           {%- if rounds_played.get(sp.player_id) %}
             <span class="muted small">&times;{{ rounds_played[sp.player_id] }}</span>
           {%- endif %}

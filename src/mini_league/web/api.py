@@ -24,6 +24,7 @@ from .deps import get_db
 from .schemas import (
     AuditEntryOut,
     CheckInRequest,
+    DesignationRequest,
     GameCreate,
     GameOut,
     GameUpdate,
@@ -78,6 +79,8 @@ def session_out(db: Session, session: LeagueSession) -> SessionOut:
                 "player": sp.player,
                 "checked_in_at": sp.checked_in_at,
                 "checked_out_at": sp.checked_out_at,
+                "designation": sp.designation,
+                "designation_override": sp.designation_override,
             }
             for sp in sessions_service.session_roster(db, session.id)
         ],
@@ -207,7 +210,9 @@ def get_player_history(
 def create_player(payload: PlayerCreate, db: Session = Depends(get_db)):
     """409 with the candidate matches when the name looks like a duplicate."""
     try:
-        return players_service.create_player(db, payload.name, force=payload.force)
+        return players_service.create_player(
+            db, payload.name, designation=payload.designation, force=payload.force
+        )
     except players_service.DuplicatePlayerError as exc:
         raise HTTPException(
             status_code=409,
@@ -230,14 +235,16 @@ def create_player(payload: PlayerCreate, db: Session = Depends(get_db)):
 
 @router.patch("/players/{player_id}", response_model=PlayerOut)
 def update_player(player_id: int, payload: PlayerUpdate, db: Session = Depends(get_db)):
-    """Rename and/or activate a player (design doc section 6.1)."""
-    if payload.name is None and payload.active is None:
+    """Rename, activate, or set the designation of a player (design doc section 6.1)."""
+    if payload.name is None and payload.active is None and payload.designation is None:
         raise HTTPException(status_code=400, detail="nothing to update")
     try:
         if payload.name is not None:
             merges_service.rename_player(db, player_id, payload.name)
         if payload.active is not None:
             merges_service.set_player_active(db, player_id, payload.active)
+        if payload.designation is not None:
+            players_service.set_designation(db, player_id, payload.designation)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -316,6 +323,22 @@ def move_session(session_id: int, payload: SessionUpdate, db: Session = Depends(
 def check_in(session_id: int, payload: CheckInRequest, db: Session = Depends(get_db)):
     try:
         sessions_service.check_in(db, session_id, payload.player_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return session_out(db, sessions_service.get_session(db, session_id))
+
+
+@router.post("/sessions/{session_id}/designation", response_model=SessionOut)
+def set_designation(
+    session_id: int, payload: DesignationRequest, db: Session = Depends(get_db)
+):
+    """Set a checked-in player's designation for this session only."""
+    try:
+        sessions_service.set_session_designation(
+            db, session_id, payload.player_id, payload.designation
+        )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

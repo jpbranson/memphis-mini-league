@@ -21,6 +21,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from trueskill import Rating
 
+from .. import designations as designations_service
 from .. import games as games_service
 from .. import leaderboard as leaderboard_service
 from .. import merges as merges_service
@@ -126,6 +127,17 @@ def matchup(
     new_a = sum(1 for pid in side_a if rating_info(pid)["is_new"])
     new_b = sum(1 for pid in side_b if rating_info(pid)["is_new"])
 
+    # Only worth showing when somebody on the pitch actually has a designation;
+    # a league that never plays coed should not be told about empty tallies.
+    held = sessions_service.session_designations(db, session.id)
+    counts_a = designations_service.counts(held.get(pid) for pid in side_a)
+    counts_b = designations_service.counts(held.get(pid) for pid in side_b)
+    any_designated = any(
+        counts[name]
+        for counts in (counts_a, counts_b)
+        for name in designations_service.DESIGNATIONS
+    )
+
     summary.update(
         {
             "ready": True,
@@ -134,6 +146,10 @@ def matchup(
             "new_a": new_a,
             "new_b": new_b,
             "has_new": bool(new_a or new_b),
+            "designations_a": counts_a,
+            "designations_b": counts_b,
+            "has_designations": any_designated,
+            "designation_names": list(designations_service.DESIGNATIONS),
         }
     )
     return summary
@@ -171,6 +187,7 @@ def board_context(
     notice: str | None = None,
     duplicate_name: str | None = None,
     duplicate_matches: list | None = None,
+    duplicate_designation: str = "",
     assignment: dict[int, int] | None = None,
 ) -> dict:
     roster = sessions_service.session_roster(db, session.id)
@@ -197,6 +214,8 @@ def board_context(
         "matchup": matchup(db, session, assignment, DEFAULT_MAX_ON_FIELD),
         "team_size": saved["team_size"] or DEFAULT_TEAM_SIZE,
         "max_on_field": saved["max_on_field"] or str(DEFAULT_MAX_ON_FIELD),
+        "even_designations": saved["even_designations"],
+        "designation_names": list(designations_service.DESIGNATIONS),
         "benched": (
             [sp for sp in present if sp.player_id not in assignment] if assignment else []
         ),
@@ -209,6 +228,9 @@ def board_context(
         "notice": notice,
         "duplicate_name": duplicate_name,
         "duplicate_matches": duplicate_matches or [],
+        # Carried through so confirming the duplicate keeps the designation the
+        # organizer already picked, rather than quietly dropping it.
+        "duplicate_designation": duplicate_designation,
     }
 
 
@@ -221,6 +243,7 @@ def render_board(
     notice: str | None = None,
     duplicate_name: str | None = None,
     duplicate_matches: list | None = None,
+    duplicate_designation: str = "",
     assignment: dict[int, int] | None = None,
     status_code: int = 200,
 ) -> HTMLResponse:
@@ -231,6 +254,7 @@ def render_board(
         notice=notice,
         duplicate_name=duplicate_name,
         duplicate_matches=duplicate_matches,
+        duplicate_designation=duplicate_designation,
         assignment=assignment,
     )
     ctx["request"] = request
@@ -478,6 +502,7 @@ def player_search(
             "candidates": checkin_candidates(db, session, q),
             "query": q.strip(),
             "rating_of": rating_lookup(db, session.season_id),
+            "designation_names": list(designations_service.DESIGNATIONS),
         },
     )
 
@@ -512,18 +537,42 @@ def check_out(
     return render_board(request, db, session)
 
 
+@router.post("/admin/session/{session_id}/designation", response_class=HTMLResponse)
+def set_designation(
+    request: Request,
+    session_id: int,
+    player_id: int = Form(...),
+    designation: str = Form(default=""),
+    db: Session = Depends(get_db),
+):
+    """Set a checked-in player's designation for today.
+
+    "WMP", "MMP" and "none" are all overrides for this session; an empty value
+    clears the override and hands them back to whatever they usually are.
+    """
+    session = load_session(db, session_id)
+    try:
+        sessions_service.set_session_designation(db, session_id, player_id, designation)
+    except (LookupError, designations_service.UnknownDesignationError) as exc:
+        return render_board(request, db, session, error=str(exc), status_code=400)
+    return render_board(request, db, session)
+
+
 @router.post("/admin/session/{session_id}/players", response_class=HTMLResponse)
 def add_player(
     request: Request,
     session_id: int,
     name: str = Form(...),
+    designation: str = Form(default=""),
     force: bool = Form(default=False),
     db: Session = Depends(get_db),
 ):
     """Create a player and check them in, warning on a near-duplicate name."""
     session = load_session(db, session_id)
     try:
-        player = players_service.create_player(db, name, force=force)
+        player = players_service.create_player(
+            db, name, designation=designation, force=force
+        )
     except players_service.DuplicatePlayerError as exc:
         # Rendered inside the board so the organizer keeps the roster in view.
         return render_board(
@@ -532,6 +581,7 @@ def add_player(
             session,
             duplicate_name=name.strip(),
             duplicate_matches=exc.matches,
+            duplicate_designation=(designation or "").strip().upper(),
             status_code=409,
         )
     except ValueError as exc:
@@ -552,6 +602,7 @@ def record_card_context(
     notice: str | None = None,
     team_size: str = DEFAULT_TEAM_SIZE,
     max_on_field: str = str(DEFAULT_MAX_ON_FIELD),
+    even_designations: bool = False,
     benched: list[int] | None = None,
 ) -> dict:
     present = [
@@ -573,6 +624,8 @@ def record_card_context(
         "balance_notice": notice,
         "team_size": team_size,
         "max_on_field": max_on_field,
+        "even_designations": even_designations,
+        "designation_names": list(designations_service.DESIGNATIONS),
         "benched": sitting_out,
         "bench_auto": bool(benched),
         "team_a": [sp for sp in present if assignment.get(sp.player_id) == 0],
@@ -609,6 +662,11 @@ def safe_optional_int(raw) -> int | None:
     return value if value is None or value >= 1 else None
 
 
+def parse_flag(raw) -> bool:
+    """An unchecked box is absent from the form, not false."""
+    return str(raw or "").strip().lower() in {"1", "true", "on", "yes"}
+
+
 def parse_optional_int(raw: str | None) -> int | None:
     """Blank or "auto" means no preference."""
     raw = (raw or "").strip()
@@ -634,6 +692,7 @@ async def balance_teams(request: Request, session_id: int, db: Session = Depends
     form = await request.form()
     team_size_raw = form.get("team_size", "")
     on_field_raw = form.get("max_on_field", str(DEFAULT_MAX_ON_FIELD))
+    even_designations = parse_flag(form.get("even_designations"))
 
     present = sessions_service.checked_in_players(db, session_id)
     if len(present) < 2:
@@ -645,6 +704,7 @@ async def balance_teams(request: Request, session_id: int, db: Session = Depends
             notice="Check in at least two players first.",
             team_size=team_size_raw,
             max_on_field=on_field_raw,
+            even_designations=even_designations,
         )
 
     try:
@@ -660,10 +720,14 @@ async def balance_teams(request: Request, session_id: int, db: Session = Depends
             sessions_service.rounds_played(db, session_id),
             random.Random(),
         )
+        # Passing designations at all is what turns the coed term on; when the
+        # box is unticked the balancer scores exactly what it always did.
+        held = sessions_service.session_designations(db, session_id)
         split = teams_service.generate_teams(
             playing,
             leaderboard_service.current_ratings(db, session.season_id, playing),
             history=session_history(db, session_id),
+            designations=held if even_designations else None,
             team_config=TeamGenConfig(),
             rng=random.Random(),
         )
@@ -676,13 +740,19 @@ async def balance_teams(request: Request, session_id: int, db: Session = Depends
             notice=str(exc),
             team_size=team_size_raw,
             max_on_field=on_field_raw,
+            even_designations=even_designations,
         )
 
     assignment = {
         pid: index for index, roster in enumerate(split.teams) for pid in roster
     }
     sessions_service.save_pending_teams(
-        db, session_id, assignment, team_size=team_size_raw, max_on_field=on_field_raw
+        db,
+        session_id,
+        assignment,
+        team_size=team_size_raw,
+        max_on_field=on_field_raw,
+        even_designations=even_designations,
     )
     return render_record_card(
         request,
@@ -691,6 +761,7 @@ async def balance_teams(request: Request, session_id: int, db: Session = Depends
         assignment,
         team_size=team_size_raw,
         max_on_field=on_field_raw,
+        even_designations=even_designations,
         benched=benched,
     )
 
@@ -703,6 +774,7 @@ async def swap_players(request: Request, session_id: int, db: Session = Depends(
     assignment = parse_assignments(form)
     team_size_raw = form.get("team_size", "")
     on_field_raw = form.get("max_on_field", str(DEFAULT_MAX_ON_FIELD))
+    even_designations = parse_flag(form.get("even_designations"))
 
     def rerender(notice=None):
         return render_record_card(
@@ -713,6 +785,7 @@ async def swap_players(request: Request, session_id: int, db: Session = Depends(
             notice=notice,
             team_size=team_size_raw,
             max_on_field=on_field_raw,
+            even_designations=even_designations,
         )
 
     try:
@@ -726,7 +799,12 @@ async def swap_players(request: Request, session_id: int, db: Session = Depends(
 
     assignment[first], assignment[second] = 1, 0
     sessions_service.save_pending_teams(
-        db, session_id, assignment, team_size=team_size_raw, max_on_field=on_field_raw
+        db,
+        session_id,
+        assignment,
+        team_size=team_size_raw,
+        max_on_field=on_field_raw,
+        even_designations=even_designations,
     )
     return rerender()
 
@@ -745,6 +823,7 @@ async def preview_matchup(request: Request, session_id: int, db: Session = Depen
         assignment,
         team_size=str(form.get("team_size") or ""),
         max_on_field=str(form.get("max_on_field") or ""),
+        even_designations=parse_flag(form.get("even_designations")),
     )
     return templates.TemplateResponse(
         request,
@@ -972,6 +1051,7 @@ def players_context(
         "query": query.strip(),
         "rating_of": rating_lookup(db, season.id) if season else (lambda _: None),
         "has_season": season is not None,
+        "designation_names": list(designations_service.DESIGNATIONS),
         "error": error,
         "notice": notice,
     }
@@ -1017,6 +1097,33 @@ def rename_player(
     except ValueError as exc:
         return render_players(request, db, query=q, error=str(exc), status_code=400)
     return render_players(request, db, query=q, notice=f"Renamed to {player.name}.")
+
+
+@router.post("/admin/players/{player_id}/designation", response_class=HTMLResponse)
+def set_player_designation(
+    request: Request,
+    player_id: int,
+    designation: str = Form(default=""),
+    q: str = Form(default=""),
+    db: Session = Depends(get_db),
+):
+    """Set or clear a player's standing designation. Blank clears it."""
+    try:
+        player = players_service.set_designation(db, player_id, designation)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        return render_players(request, db, query=q, error=str(exc), status_code=400)
+    return render_players(
+        request,
+        db,
+        query=q,
+        notice=(
+            f"{player.name} is now {player.designation}."
+            if player.designation
+            else f"{player.name} has no designation."
+        ),
+    )
 
 
 @router.post("/admin/players/{player_id}/active", response_class=HTMLResponse)

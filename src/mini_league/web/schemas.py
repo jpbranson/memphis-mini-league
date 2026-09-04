@@ -34,6 +34,7 @@ class PlayerOut(ORMModel):
     name: str
     active: bool
     merged_into: int | None = None
+    designation: str | None = None
 
 
 class PlayerMatchOut(ORMModel):
@@ -44,6 +45,7 @@ class PlayerMatchOut(ORMModel):
 
 class PlayerCreate(BaseModel):
     name: str
+    designation: str | None = None
     force: bool = False
 
 
@@ -60,10 +62,24 @@ class SessionPlayerOut(ORMModel):
     player: PlayerOut
     checked_in_at: dt.datetime
     checked_out_at: dt.datetime | None
+    # What they count as today, and the override that produced it if any.
+    designation: str | None = None
+    designation_override: str | None = None
 
 
 class CheckInRequest(BaseModel):
     player_id: int
+
+
+class DesignationRequest(BaseModel):
+    """Set a player's designation for one session.
+
+    `None` clears the override so they count as whatever they usually are;
+    "none" says they have no designation today, which is a different answer.
+    """
+
+    player_id: int
+    designation: str | None = None
 
 
 class TeamIn(BaseModel):
@@ -142,6 +158,9 @@ class PlayerDetailOut(ORMModel):
 class PlayerUpdate(BaseModel):
     name: str | None = None
     active: bool | None = None
+    # None leaves the designation alone, since that is what None means for every
+    # other field here. An empty string is how you clear one.
+    designation: str | None = None
 
 
 class MergeRequest(BaseModel):

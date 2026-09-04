@@ -25,7 +25,7 @@ from mini_league.models import (
     SessionPlayer,
 )
 from mini_league.players import create_player
-from mini_league.sessions import check_in
+from mini_league.sessions import check_in, set_session_designation
 
 
 def snapshot(db, player_id, season_id):
@@ -375,3 +375,47 @@ def test_audit_entries_are_newest_first(db, make_players):
     actions = [e.action for e in audit_entries(db)]
     assert actions[0] == "merge_players"
     assert "rename_player" in actions
+
+
+# --- designations across a merge (design doc section 6.1) ------------------------
+
+
+def test_the_kept_record_keeps_its_own_designation(db, make_players):
+    source, target = make_players(2)
+    source.designation = "WMP"
+    target.designation = "MMP"
+    db.commit()
+
+    merge_players(db, source.id, target.id)
+    assert target.designation == "MMP"
+
+
+def test_a_day_designation_travels_with_the_session_row(db, league_session, make_players):
+    """Only the duplicate was checked in, so their row moves across as it is."""
+    source, target = make_players(2)
+    check_in(db, league_session.id, source.id)
+    set_session_designation(db, league_session.id, source.id, "WMP")
+
+    merge_players(db, source.id, target.id)
+
+    moved = db.get(SessionPlayer, (league_session.id, target.id))
+    assert moved.designation_override == "WMP"
+
+
+def test_where_both_were_here_the_kept_row_wins_and_undo_puts_the_other_back(
+    db, league_session, make_players
+):
+    source, target = make_players(2)
+    for player in (source, target):
+        check_in(db, league_session.id, player.id)
+    set_session_designation(db, league_session.id, source.id, "WMP")
+    set_session_designation(db, league_session.id, target.id, "MMP")
+
+    entry = merge_players(db, source.id, target.id)
+    kept = db.get(SessionPlayer, (league_session.id, target.id))
+    assert kept.designation_override == "MMP"
+    assert db.get(SessionPlayer, (league_session.id, source.id)) is None
+
+    undo_merge(db, entry.id)
+    restored = db.get(SessionPlayer, (league_session.id, source.id))
+    assert restored.designation_override == "WMP"

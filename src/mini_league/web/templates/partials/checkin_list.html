@@ -9,6 +9,9 @@
           <span class="rating">
             {%- if rating_of(entry.player.id).is_new %}new{% else %}{{ rating_of(entry.player.id).rating }}{% endif -%}
           </span>
+          {% if entry.player.designation %}
+            <span class="tag">{{ entry.player.designation }}</span>
+          {% endif %}
           {% if not entry.player.active %}<span class="muted small">inactive</span>{% endif %}
           {% if entry.present %}<span class="muted small">already checked in</span>{% endif %}
         </span>
@@ -32,6 +35,17 @@
         hx-target="#board"
         style="margin-top:10px">
     <input type="hidden" name="name" value="{{ query }}">
-    <button class="btn" type="submit">Create new player "{{ query }}"</button>
+    <div class="row wrap" style="gap:8px">
+      {# Optional, and blank by default: most leagues never set one. #}
+      <span class="seg tight">
+        {% for name in designation_names %}
+          <label><input type="radio" name="designation" value="{{ name }}">
+            <span>{{ name }}</span></label>
+        {% endfor %}
+        <label><input type="radio" name="designation" value="" checked>
+          <span>&mdash;</span></label>
+      </span>
+      <button class="btn" type="submit">Create new player "{{ query }}"</button>
+    </div>
   </form>
 {% endif %}

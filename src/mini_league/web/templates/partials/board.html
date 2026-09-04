@@ -11,16 +11,46 @@
 {% if present %}
   <ul class="plain">
     {% for sp in present %}
-      <li>
+      {# Wraps rather than squeezes: a long name plus the designation picker
+         plus Left does not fit one phone line, and squeezing loses the tap
+         targets that matter most. #}
+      <li class="wrap" style="row-gap:6px">
         <span><a href="/players/{{ sp.player_id }}">{{ sp.player.name }}</a>
           <span class="rating">
             {%- if rating_of(sp.player_id).is_new %}&ndash;{% else %}{{ rating_of(sp.player_id).rating }}{% endif -%}
           </span>
+          {%- if sp.designation_is_for_today %}
+            <span class="tag today">today</span>
+          {%- endif %}
         </span>
-        <button class="btn small"
-                hx-post="/admin/session/{{ session.id }}/checkout"
-                hx-vals='{"player_id": {{ sp.player_id }}}'
-                hx-target="#board">Left</button>
+        <span class="row" style="gap:6px">
+          <span class="seg tight">
+            {% for name in designation_names %}
+              <label><input type="radio" name="designation_{{ sp.player_id }}"
+                     value="{{ name }}" {% if sp.designation == name %}checked{% endif %}
+                     hx-post="/admin/session/{{ session.id }}/designation"
+                     hx-vals='{"player_id": {{ sp.player_id }}, "designation": "{{ name }}"}'
+                     hx-target="#board"><span>{{ name }}</span></label>
+            {% endfor %}
+            <label><input type="radio" name="designation_{{ sp.player_id }}"
+                   value="NONE" {% if sp.designation is none %}checked{% endif %}
+                   hx-post="/admin/session/{{ session.id }}/designation"
+                   hx-vals='{"player_id": {{ sp.player_id }}, "designation": "none"}'
+                   hx-target="#board"><span>&mdash;</span></label>
+          </span>
+          {% if sp.designation_is_for_today %}
+            <button class="btn small"
+                    hx-post="/admin/session/{{ session.id }}/designation"
+                    hx-vals='{"player_id": {{ sp.player_id }}, "designation": ""}'
+                    hx-target="#board"
+                    title="Drop today's change and use their usual designation">
+              Usually {{ sp.player.designation or "none" }}</button>
+          {% endif %}
+          <button class="btn small"
+                  hx-post="/admin/session/{{ session.id }}/checkout"
+                  hx-vals='{"player_id": {{ sp.player_id }}}'
+                  hx-target="#board">Left</button>
+        </span>
       </li>
     {% endfor %}
   </ul>

@@ -19,6 +19,7 @@ from typing import Iterable, Mapping, Sequence
 
 from trueskill import Rating, TrueSkill
 
+from .designations import imbalance
 from .ratings import make_env, partial_play_weights, win_probability
 from .settings import DEFAULT_RATING_CONFIG, RatingConfig, TeamGenConfig
 
@@ -32,6 +33,7 @@ class Split:
     win_probability: float  # for teams[0]
     balance_cost: float
     variety_cost: float
+    designation_cost: float
     total_cost: float
 
     @property
@@ -88,6 +90,7 @@ def _score_split(
     ratings: Mapping[int, Rating],
     weights: Mapping[frozenset[int], float],
     config: TeamGenConfig,
+    designations: Mapping[int, str | None] | None = None,
 ) -> Split:
     sizes = [len(t) for t in teams]
     on_field = min(sizes)
@@ -101,13 +104,22 @@ def _score_split(
     )
     balance = abs(2 * probability - 1)  # 0 when the match is a coin flip
     variety = _variety_cost(teams, weights)
+    # No designations supplied means the organizer did not ask for a coed
+    # split, and the term is not merely zero but absent: a round that never
+    # mentions WMPs and MMPs is scored exactly as it was before they existed.
+    designation = 0.0 if designations is None else imbalance(teams, designations)
     return Split(
         teams=tuple(tuple(t) for t in teams),
         players_on_field=on_field,
         win_probability=probability,
         balance_cost=balance,
         variety_cost=variety,
-        total_cost=config.w_balance * balance + config.w_variety * variety,
+        designation_cost=designation,
+        total_cost=(
+            config.w_balance * balance
+            + config.w_variety * variety
+            + config.w_designation * designation
+        ),
     )
 
 
@@ -147,11 +159,16 @@ def candidate_splits(
     ratings: Mapping[int, Rating],
     *,
     history: Sequence[Sequence[Sequence[int]]] = (),
+    designations: Mapping[int, str | None] | None = None,
     team_config: TeamGenConfig | None = None,
     rating_config: RatingConfig = DEFAULT_RATING_CONFIG,
     rng: random.Random | None = None,
 ) -> list[Split]:
-    """Every scored split, best (lowest cost) first. Two teams only for now."""
+    """Every scored split, best (lowest cost) first. Two teams only for now.
+
+    Passing `designations` asks for an even coed split as well as an even
+    matchup; leaving it out scores the split on balance and variety alone.
+    """
     team_config = team_config or TeamGenConfig()
     rng = rng or random.Random()
     players = list(player_ids)
@@ -170,7 +187,10 @@ def candidate_splits(
     else:
         raw = _sample_two_team_splits(players, sizes, team_config.sample_size, rng)
 
-    scored = [_score_split(env, [a, b], ratings, weights, team_config) for a, b in raw]
+    scored = [
+        _score_split(env, [a, b], ratings, weights, team_config, designations)
+        for a, b in raw
+    ]
     scored.sort(key=lambda s: (s.total_cost, s.teams))
     return scored
 
@@ -180,6 +200,7 @@ def generate_teams(
     ratings: Mapping[int, Rating],
     *,
     history: Sequence[Sequence[Sequence[int]]] = (),
+    designations: Mapping[int, str | None] | None = None,
     team_config: TeamGenConfig | None = None,
     rating_config: RatingConfig = DEFAULT_RATING_CONFIG,
     rng: random.Random | None = None,
@@ -191,6 +212,7 @@ def generate_teams(
         player_ids,
         ratings,
         history=history,
+        designations=designations,
         team_config=team_config,
         rating_config=rating_config,
         rng=rng,

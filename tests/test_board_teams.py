@@ -257,3 +257,111 @@ def test_panel_says_nothing_about_newcomers_when_everyone_is_rated(
         data={f"assign_{ada}": "0", f"assign_{ben}": "1"},
     ).text
     assert "unrated player" not in body
+
+
+# --- coed rounds (design doc section 5.4) ----------------------------------------
+
+
+def designate(client, session_id, player_id, value):
+    return client.post(
+        f"/admin/session/{session_id}/designation",
+        data={"player_id": player_id, "designation": value},
+    )
+
+
+def coed_box(body: str) -> str:
+    """The even-up checkbox as rendered, so a test can ask whether it is ticked."""
+    found = re.search(
+        r'<input type="checkbox" name="even_designations"[^>]*>', re.sub(r"\s+", " ", body)
+    )
+    assert found, "the coed toggle is missing from the format form"
+    return found.group(0)
+
+
+def coed_six(client, session_id, make_api_players):
+    """Six players: two WMPs and four MMPs, all checked in."""
+    ids = make_api_players("Ada", "Bea", "Cal", "Dan", "Eli", "Fin")
+    check_in_all(client, session_id, ids)
+    for player_id in ids[:2]:
+        designate(client, session_id, player_id, "WMP")
+    for player_id in ids[2:]:
+        designate(client, session_id, player_id, "MMP")
+    return ids
+
+
+def test_ticking_the_box_splits_the_designations_evenly(
+    client, page_session, make_api_players
+):
+    ids = coed_six(client, page_session, make_api_players)
+    women = set(ids[:2])
+
+    for _ in range(6):  # teams are picked at random among the best few
+        body = text(
+            client.post(
+                f"/admin/session/{page_session}/balance",
+                data={"team_size": "3", "max_on_field": "3", "even_designations": "1"},
+            )
+        )
+        sides = assignments_in(body)
+        assert {sides[pid] for pid in women} == {"0", "1"}
+
+
+def test_leaving_the_box_alone_keeps_the_old_behaviour(
+    client, page_session, make_api_players
+):
+    """Not a claim about the split, but that nothing is required to get one."""
+    coed_six(client, page_session, make_api_players)
+    body = text(
+        client.post(
+            f"/admin/session/{page_session}/balance",
+            data={"team_size": "3", "max_on_field": "3"},
+        )
+    )
+    assert len(assignments_in(body)) == 6
+    assert not coed_box(body).endswith("checked>")
+
+
+def test_the_toggle_survives_the_phone_locking(client, page_session, make_api_players):
+    """Saved with the line-up, like the format fields it sits beside."""
+    coed_six(client, page_session, make_api_players)
+    client.post(
+        f"/admin/session/{page_session}/balance",
+        data={"team_size": "3", "max_on_field": "3", "even_designations": "1"},
+    )
+
+    body = text(client.get(f"/admin/session/{page_session}"))
+    assert coed_box(body).endswith("checked>")
+
+
+def test_the_panel_counts_each_side(client, page_session, make_api_players):
+    ids = coed_six(client, page_session, make_api_players)
+    body = re.sub(
+        r"\s+",
+        " ",
+        text(
+            client.post(
+                f"/admin/session/{page_session}/preview",
+                data={
+                    f"assign_{ids[0]}": "0",
+                    f"assign_{ids[2]}": "0",
+                    f"assign_{ids[1]}": "1",
+                    f"assign_{ids[3]}": "1",
+                },
+            )
+        ),
+    )
+    assert body.count("1 WMP &middot; 1 MMP") == 2
+
+
+def test_the_panel_stays_quiet_when_nobody_has_a_designation(
+    client, page_session, make_api_players
+):
+    ada, ben = make_api_players("Ada", "Ben")
+    check_in_all(client, page_session, [ada, ben])
+    body = text(
+        client.post(
+            f"/admin/session/{page_session}/preview",
+            data={f"assign_{ada}": "0", f"assign_{ben}": "1"},
+        )
+    )
+    assert "WMP" not in body

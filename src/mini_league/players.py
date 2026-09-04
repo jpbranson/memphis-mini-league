@@ -14,6 +14,7 @@ from difflib import SequenceMatcher
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from . import designations
 from .models import Player
 
 # A name at or above this similarity blocks creation unless forced.
@@ -102,15 +103,24 @@ def find_duplicates(db: Session, name: str) -> list[PlayerMatch]:
     return [m for m in search_players(db, name, limit=5) if m.is_duplicate]
 
 
-def create_player(db: Session, name: str, *, force: bool = False, commit: bool = True) -> Player:
+def create_player(
+    db: Session,
+    name: str,
+    *,
+    designation: str | None = None,
+    force: bool = False,
+    commit: bool = True,
+) -> Player:
     """Add a player, refusing a near-duplicate name unless forced.
 
     Raises DuplicatePlayerError with the candidate matches when a similar name
-    exists and force is False.
+    exists and force is False. A designation is optional here as everywhere:
+    most players never need one, and it can be set later.
     """
     name = name.strip()
     if not name:
         raise ValueError("player name is required")
+    designation = designations.parse(designation)
 
     if not force:
         duplicates = find_duplicates(db, name)
@@ -124,7 +134,7 @@ def create_player(db: Session, name: str, *, force: bool = False, commit: bool =
     if exact is not None:
         raise ValueError(f"an active player is already named {name!r}")
 
-    player = Player(name=name)
+    player = Player(name=name, designation=designation)
     db.add(player)
     db.flush()
     if commit:
@@ -144,3 +154,31 @@ def list_players(db: Session, *, include_inactive: bool = False) -> list[Player]
     if not include_inactive:
         stmt = stmt.where(Player.active.is_(True))
     return list(db.scalars(stmt))
+
+
+def set_designation(
+    db: Session, player_id: int, designation: str | None, *, commit: bool = True
+) -> Player:
+    """Set or clear a player's standing designation, and log the change.
+
+    Logged like a rename: it changes how the balancer treats someone from now
+    on, so an organizer looking at odd teams later can see when it happened.
+    """
+    from .audit import log_action
+
+    player = get_player(db, player_id)
+    after = designations.parse(designation)
+    before = player.designation
+    if before == after:
+        return player
+
+    player.designation = after
+    db.flush()
+    log_action(
+        db,
+        "set_designation",
+        {"player_id": player_id, "before": before, "after": after},
+    )
+    if commit:
+        db.commit()
+    return player

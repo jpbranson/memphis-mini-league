@@ -13,6 +13,8 @@ from typing import Any
 from sqlalchemy import JSON, ForeignKey, Index, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from .designations import resolve
+
 
 def utcnow() -> datetime:
     """Naive UTC timestamp (SQLite has no timezone support)."""
@@ -40,6 +42,9 @@ class Player(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     active: Mapped[bool] = mapped_column(default=True)
     merged_into: Mapped[int | None] = mapped_column(ForeignKey("players.id"))
+    # WMP, MMP or null: who this player matches up against in a coed round.
+    # Optional, and used only when picking sides (see `designations`).
+    designation: Mapped[str | None]
 
     merged_into_player: Mapped[Player | None] = relationship(remote_side="Player.id")
 
@@ -92,9 +97,25 @@ class SessionPlayer(Base):
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), primary_key=True)
     checked_in_at: Mapped[datetime] = mapped_column(default=utcnow)
     checked_out_at: Mapped[datetime | None]
+    # This morning only. Null means use the player's standing designation;
+    # "NONE" means they have none today, which is a different answer.
+    designation_override: Mapped[str | None]
 
     session: Mapped[LeagueSession] = relationship(back_populates="players")
     player: Mapped[Player] = relationship()
+
+    @property
+    def designation(self) -> str | None:
+        """What this player counts as today: their own unless the day overrides it."""
+        return resolve(self.player.designation, self.designation_override)
+
+    @property
+    def designation_is_for_today(self) -> bool:
+        """True when today's answer differs from the player's standing one."""
+        return (
+            self.designation_override is not None
+            and self.designation != self.player.designation
+        )
 
 
 class Game(Base):

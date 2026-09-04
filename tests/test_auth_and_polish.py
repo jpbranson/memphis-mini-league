@@ -479,3 +479,9 @@ def test_the_board_delete_still_returns_the_board(client, page_session, make_api
     r = client.post(f"/admin/games/{game_id}/delete")
     assert r.status_code == 200
     assert "Round deleted" in text(r)
+
+
+def test_settings_lists_the_designation_weight(client, api_season):
+    body = squash(text(client.get("/admin/settings")))
+    assert "Designation weight" in body
+    assert "0.80" in body

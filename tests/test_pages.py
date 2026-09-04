@@ -5,6 +5,10 @@ from __future__ import annotations
 import re
 
 
+def squash(value: str) -> str:
+    return re.sub(r"\s+", " ", value)
+
+
 def text(response) -> str:
     return response.text
 
@@ -422,3 +426,112 @@ def test_edit_rejects_a_winner_that_contradicts_the_scores(
     assert r.status_code == 303
     teams = client.get(f"/api/sessions/{page_session}").json()["games"][0]["teams"]
     assert next(t for t in teams if t["rank"] == 1)["player_ids"] == [ben]
+
+
+# --- designations on the day-of board (design doc section 5.4) -------------------
+
+
+def test_the_board_offers_a_designation_for_every_player_present(
+    client, page_session, make_api_players
+):
+    (ada,) = make_api_players("Ada")
+    check_in_all(client, page_session, [ada])
+
+    body = squash(text(client.get(f"/admin/session/{page_session}")))
+    assert f'"player_id": {ada}, "designation": "WMP"' in body
+    assert f'"player_id": {ada}, "designation": "MMP"' in body
+    assert f'"player_id": {ada}, "designation": "none"' in body
+
+
+def test_setting_a_designation_for_the_day_leaves_the_player_alone(
+    client, page_session, make_api_players
+):
+    (ada,) = make_api_players("Ada")
+    client.patch(f"/api/players/{ada}", json={"designation": "WMP"})
+    check_in_all(client, page_session, [ada])
+
+    client.post(
+        f"/admin/session/{page_session}/designation",
+        data={"player_id": ada, "designation": "MMP"},
+    )
+
+    roster = client.get(f"/api/sessions/{page_session}").json()["players"]
+    assert roster[0]["designation"] == "MMP"
+    assert roster[0]["designation_override"] == "MMP"
+    # Their record still says what it said.
+    assert client.get(f"/api/players/{ada}").json()["player"]["designation"] == "WMP"
+
+
+def test_a_day_designation_can_be_removed_then_handed_back(
+    client, page_session, make_api_players
+):
+    (ada,) = make_api_players("Ada")
+    client.patch(f"/api/players/{ada}", json={"designation": "WMP"})
+    check_in_all(client, page_session, [ada])
+
+    def roster():
+        return client.get(f"/api/sessions/{page_session}").json()["players"][0]
+
+    client.post(
+        f"/admin/session/{page_session}/designation",
+        data={"player_id": ada, "designation": "none"},
+    )
+    assert roster()["designation"] is None
+    assert roster()["designation_override"] == "NONE"
+    body = squash(text(client.get(f"/admin/session/{page_session}")))
+    assert "today" in body and "Usually WMP" in body
+
+    # Clearing the override is the other button, and is a different thing.
+    client.post(
+        f"/admin/session/{page_session}/designation",
+        data={"player_id": ada, "designation": ""},
+    )
+    assert roster()["designation"] == "WMP"
+    assert roster()["designation_override"] is None
+
+
+def test_a_bad_designation_is_refused_without_losing_the_board(
+    client, page_session, make_api_players
+):
+    (ada,) = make_api_players("Ada")
+    check_in_all(client, page_session, [ada])
+
+    response = client.post(
+        f"/admin/session/{page_session}/designation",
+        data={"player_id": ada, "designation": "WNP"},
+    )
+    assert response.status_code == 400
+    assert "not a designation" in squash(text(response))
+    assert "Ada" in text(response)  # the board is still there to work with
+
+
+def test_a_new_player_can_be_created_with_a_designation(client, page_session):
+    client.post(
+        f"/admin/session/{page_session}/players",
+        data={"name": "Ada", "designation": "WMP"},
+    )
+    players = client.get("/api/players?q=Ada").json()
+    assert players[0]["player"]["designation"] == "WMP"
+
+
+def test_confirming_a_duplicate_keeps_the_designation_already_chosen(
+    client, page_session, make_api_players
+):
+    make_api_players("Justin M.")
+    warning = client.post(
+        f"/admin/session/{page_session}/players",
+        data={"name": "Justin", "designation": "MMP"},
+    )
+    assert warning.status_code == 409
+    assert 'name="designation" value="MMP"' in text(warning)
+
+    client.post(
+        f"/admin/session/{page_session}/players",
+        data={"name": "Justin", "designation": "MMP", "force": "true"},
+    )
+    created = [
+        m["player"]
+        for m in client.get("/api/players?q=Justin").json()
+        if m["player"]["name"] == "Justin"
+    ]
+    assert created[0]["designation"] == "MMP"

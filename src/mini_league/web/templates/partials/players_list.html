@@ -21,6 +21,9 @@
             {%- if info and info.is_new %}new{% elif info %}{{ info.rating }}{% endif -%}
           </span>
         {% endif %}
+        {% if player.designation %}
+          <span class="tag">{{ player.designation }}</span>
+        {% endif %}
         {% if player.merged_into %}
           <span class="muted small">merged away</span>
         {% elif not player.active %}
@@ -48,6 +51,25 @@
         <input type="hidden" name="q" value="{{ query }}">
         <button class="btn small" type="submit">Rename</button>
       </form>
+
+      {# The standing designation. A session can still override it for a day. #}
+      <div class="row" style="margin-top:8px; gap:6px">
+        <span class="seg tight">
+          {% for name in designation_names %}
+            <label><input type="radio" name="designation_{{ player.id }}" value="{{ name }}"
+                   {% if player.designation == name %}checked{% endif %}
+                   hx-post="/admin/players/{{ player.id }}/designation"
+                   hx-vals='{"designation": "{{ name }}", "q": "{{ query }}"}'
+                   hx-target="#players-list"><span>{{ name }}</span></label>
+          {% endfor %}
+          <label><input type="radio" name="designation_{{ player.id }}" value=""
+                 {% if not player.designation %}checked{% endif %}
+                 hx-post="/admin/players/{{ player.id }}/designation"
+                 hx-vals='{"designation": "", "q": "{{ query }}"}'
+                 hx-target="#players-list"><span>&mdash;</span></label>
+        </span>
+        <span class="muted small">Matches up as</span>
+      </div>
     {% endif %}
   </div>
 {% endfor %}

@@ -285,3 +285,28 @@ def test_api_audit_list_and_undo_validation(client, api_season, make_api_players
 
     assert client.post(f"/api/admin/audit/{entries[0]['id']}/undo").status_code == 400
     assert client.post("/api/admin/audit/999/undo").status_code == 404
+
+
+# --- standing designations (design doc section 5.4) ------------------------------
+
+
+def test_a_designation_can_be_set_and_cleared_from_the_players_page(
+    client, make_api_players
+):
+    (ada,) = make_api_players("Ada")
+
+    body = text(client.post(f"/admin/players/{ada}/designation", data={"designation": "WMP"}))
+    assert "Ada is now WMP." in squash(body)
+    assert '<span class="tag">WMP</span>' in squash(body)
+
+    body = text(client.post(f"/admin/players/{ada}/designation", data={"designation": ""}))
+    assert "Ada has no designation." in squash(body)
+    assert '<span class="tag">WMP</span>' not in squash(body)
+
+
+def test_a_bad_designation_keeps_the_list_on_screen(client, make_api_players):
+    (ada,) = make_api_players("Ada")
+    response = client.post(f"/admin/players/{ada}/designation", data={"designation": "WNP"})
+    assert response.status_code == 400
+    assert "not a designation" in squash(text(response))
+    assert "Ada" in text(response)

@@ -98,7 +98,7 @@ Implement a single `recompute_ratings(season_id)` function that clears that seas
 ## 5. Team generation
 
 ### 5.1 Inputs
-- The list of checked-in players for the session, with their current μ and σ.
+- The list of checked-in players for the session, with their current μ and σ, and their designations for the day (see §5.4).
 - Desired format: number of teams (usually 2, but support 2+ for round-robin mornings) and team size, or "auto" (fill evenly, allow one team to be one player larger if odd).
 - History of who has played together in this session (to encourage variety).
 
@@ -108,7 +108,8 @@ Implement a single `recompute_ratings(season_id)` function that clears that seas
 2. **Score each split** with a cost function:
    - `balance_cost`: difference between the teams' predicted win probabilities (TrueSkill gives this directly via team skill sums and variances). Target is 50/50.
    - `variety_cost`: number of teammate pairs that have already been on the same team in this session, weighted by how recent.
-   - `total = w_balance × balance_cost + w_variety × variety_cost` (start with `w_balance = 1.0`, `w_variety = 0.3`).
+   - `designation_cost`: how unevenly WMPs and MMPs are spread across the teams (see §5.4). Only scored when the organizer has asked for an even coed split; otherwise the term is absent, not zero.
+   - `total = w_balance × balance_cost + w_variety × variety_cost + w_designation × designation_cost` (start with `w_balance = 1.0`, `w_variety = 0.3`, `w_designation = 0.8`).
 3. **Pick randomly among the top N** (e.g. top 5) splits rather than always the single best, so teams aren't deterministic.
 4. Present the teams with the predicted win probability (e.g. "Team A 52% – Team B 48%") so the organizer can sanity-check.
 5. Allow the organizer to **manually swap two players** and see the updated win probability, or **regenerate**.
@@ -119,6 +120,16 @@ Implement a single `recompute_ratings(season_id)` function that clears that seas
 - Player arrives mid-session: check them in; they're included in the next generation.
 - Player leaves mid-session: check them out; excluded from next generation. Past games are unaffected.
 - Player sitting out a round (too many players): support a "bench" list; prioritize benching players who have played the most rounds this session.
+
+### 5.4 Designations (coed rounds)
+
+The league sometimes plays coed, which means matching people up by designation as well as by rating. Two exist: **WMP** (woman matching player) and **MMP** (man matching player). A designation says who you are matched up against and nothing else — it never touches a rating, a result, or a replay.
+
+- A player optionally has one **standing designation**. Most leagues never set one, and the app works exactly as it did when nobody has.
+- A session can **override** a player's designation for the day, because someone can turn up and play the other side of a match-up without that being a permanent change to their record. The override has three answers: WMP, MMP, or *none today* — the last of which is different from having no override at all.
+- The **even-up toggle** on the day-of board is per round and off by default. Ticked, the generator scores `designation_cost`; unticked, it scores exactly what it scored before designations existed.
+- `designation_cost` counts both designations rather than one, because with undesignated players an even split of WMPs does not imply an even split of MMPs. It is divided by the number of players so it lands in 0..1 alongside the other two costs.
+- Benching still goes by rounds played, not designation. With a lopsided turnout the generator can only work with whoever is left on the pitch; the organizer moves people by hand if the split it finds is not the one they want.
 
 ## 6. Data model
 
@@ -202,6 +213,7 @@ audit_log                        -- who changed what, for undoing mistakes
 ```
 
 **Notes**
+- `players.designation` and `session_players.designation_override` are both nullable and hold `WMP`, `MMP`, or (for the override only) `NONE` meaning no designation today. Neither is an input to any rating.
 - `rating_history` and `player_season_ratings` are derived tables; `games` + `game_teams` + `game_team_players` are the source of truth.
 - Use soft deletes for games so mistakes can be undone and the audit trail is preserved.
 - A single session can contain multiple simultaneous games (e.g. 12 people playing two 3v3 games at once). `round_number` groups them.
@@ -224,8 +236,13 @@ Organizers add players on the day, often by name only, so duplicates will happen
   5. Write an `audit_log` entry with the full before-state so the merge can be reversed.
 - Provide **Undo merge** (reads the audit entry, splits the rows back, recomputes).
 
+**Designations on merge**
+- The target keeps its own standing designation: the merge says these two records are one person, and the target is the record being kept.
+- A day-of override belongs to the `session_players` row it was set on, so where only the source was checked in the override moves across with the row, and where both were the target's row survives. The discarded override is kept in the audit snapshot so undo restores it.
+
 **Other edits**
 - Rename a player (all history follows the id, so this is free).
+- Set or clear a player's standing designation (logged, since it changes how the balancer treats them from then on).
 - Deactivate/reactivate a player (hidden from check-in list and leaderboard, history preserved).
 - Move a session to a different season (rare; recompute both seasons).
 - Edit a past game's teams/result, or delete it (already covered in §7); each triggers recompute.
@@ -243,12 +260,12 @@ All pages mobile-first; the organizer will mostly use this on a phone at the fie
 ### Organizer (behind login)
 - **`/admin/session/new`** — pick date (defaults to today; season inferred from date), check in players from a searchable list, add a new player inline with duplicate warning (see §6.1).
 - **`/admin/session/:id`** — the main "day of" screen:
-  - Checked-in player list with check-in/check-out toggles.
-  - Format picker: team count, team size / auto.
-  - **Generate teams** button → shows teams with predicted win %, swap and regenerate controls.
+  - Checked-in player list with check-in/check-out toggles, each row showing that player's designation for the day with buttons to change it, drop it, or hand them back to their standing one.
+  - Format picker: team count, team size / auto, and an **even up WMP/MMP** toggle for coed rounds.
+  - **Generate teams** button → shows teams with predicted win % and, when anyone on the pitch has one, each side's designation counts; swap and regenerate controls.
   - **Record result** form: pick winner (tap a team), optional score, submit. On submit, ratings update and the screen is ready for the next round.
   - List of completed rounds this session with edit/delete.
-- **`/admin/players`** — add, rename, deactivate/reactivate, **merge duplicates** with confirmation and undo.
+- **`/admin/players`** — add, rename, set or clear a standing designation, deactivate/reactivate, **merge duplicates** with confirmation and undo.
 - **`/admin/seasons`** — list seasons, start a new season (ends the current one today), rename.
 - **`/admin/settings`** — TrueSkill parameters, team-gen weights, "recompute all ratings" button, audit log view.
 
@@ -325,4 +342,5 @@ Before trusting the league with real people, validate the rating system with a s
 - **Seasons.** Ratings reset per season; all past sessions, games, and standings stay viewable.
 - **Scores stored, not used.** Only win/loss affects ratings.
 - **One organizer account** (single password) for v1.
+- **Designations are for matchmaking only.** WMP and MMP change who ends up on which side and nothing else. No rating, result, or replay reads them, so a league can adopt them, drop them, or ignore them entirely without disturbing a single standing.
 - **Day-of player entry is the norm.** Duplicate prevention at check-in and a reversible merge tool are v1 features, not extras.
